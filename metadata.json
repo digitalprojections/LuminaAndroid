@@ -1,0 +1,6 @@
+{
+  "name": "Lumina",
+  "description": "Professional AI Image Generation and Real-time Data Sync.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
