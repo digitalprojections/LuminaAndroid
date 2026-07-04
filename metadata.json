@@ -1,6 +1,6 @@
 {
-  "name": "Lumina",
-  "description": "Professional AI Image Generation and Real-time Data Sync.",
+  "name": "OneImage",
+  "description": "Android frontend shell for the OneImage backend.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": []
 }

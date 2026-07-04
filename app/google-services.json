@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "51616407122",
+    "project_id": "onestudio-78e34",
+    "storage_bucket": "onestudio-78e34.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:51616407122:android:f3883ac791bd5e583b498b",
+        "android_client_info": {
+          "package_name": "com.oneimage.android"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "51616407122-gafobbo754qk8quglopo3de92tqhqe3f.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBFZn-uswLrECrEolelkbaMo9q96FegMdE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "51616407122-gafobbo754qk8quglopo3de92tqhqe3f.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
