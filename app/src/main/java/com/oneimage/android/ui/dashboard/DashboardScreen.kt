@@ -44,7 +44,6 @@ fun DashboardScreen(
         DashboardItem("Image Generation", Icons.Default.AutoAwesome, Screen.ImageGen, "Consistent character views"),
         DashboardItem("Video Generation", Icons.Default.Movie, Screen.VideoGen, "Short video from two images"),
         DashboardItem("Keyframes", Icons.Default.Animation, Screen.Keyframes, "Longer video from key images"),
-        DashboardItem("Video Description", Icons.Default.Description, Screen.VideoDescription, "Scene notes from short clips"),
         DashboardItem("LipSync", Icons.Default.Mic, Screen.LipSync, "Speaking or singing image clips"),
         DashboardItem("Character Replacement", Icons.Default.FaceRetouchingNatural, Screen.CharacterReplacement, "Change a character in a clip"),
         DashboardItem("Story Images", Icons.Default.AutoStories, Screen.StoryImages, "Images for story paragraphs"),
