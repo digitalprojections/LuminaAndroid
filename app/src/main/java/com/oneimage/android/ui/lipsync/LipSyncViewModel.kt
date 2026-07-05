@@ -22,6 +22,7 @@ import com.oneimage.android.BuildConfig
 import com.oneimage.android.api.OneImageAccountProfile
 import com.oneimage.android.api.OneImageApi
 import com.oneimage.android.api.OneImageFileInfo
+import com.oneimage.android.api.LocalTaskResultStore
 import com.oneimage.android.api.OneImageQueueStatus
 import com.oneimage.android.api.OneImageTask
 import com.oneimage.android.api.OneImageTaskResult
@@ -45,6 +46,8 @@ import kotlin.math.roundToInt
 private const val TASK_HISTORY_LIMIT = 250L
 private const val ENGINE_STATUS_STALE_MS = 90_000L
 private const val LIPSYNC_CREDITS_PER_SECOND = 4
+private const val MAX_LIPSYNC_AUDIO_SECONDS = 600f
+private const val DEFAULT_LIPSYNC_PROMPT = "person singing naturally, expressive lip movement, cinematic lighting"
 
 enum class LipSyncPhase {
     Idle,
@@ -61,7 +64,10 @@ enum class LipSyncPhase {
 data class LipSyncUiState(
     val sourceImageUri: Uri? = null,
     val transferImageUri: Uri? = null,
-    val prompt: String = "",
+    val transferImageFileInfo: OneImageFileInfo? = null,
+    val transferImageWidth: Int = 512,
+    val transferImageHeight: Int = 512,
+    val prompt: String = DEFAULT_LIPSYNC_PROMPT,
     val audioUri: Uri? = null,
     val audioFileInfo: OneImageFileInfo? = null,
     val audioDurationSeconds: Float = 0f,
@@ -139,14 +145,27 @@ class LipSyncViewModel : ViewModel() {
     fun selectImage(context: Context, uri: Uri) {
         val appContext = context.applicationContext
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(sourceImageUri = uri, transferImageUri = null, phase = LipSyncPhase.Preparing, statusMessage = "Preparing image...")
+            _uiState.value = _uiState.value.copy(sourceImageUri = uri, transferImageUri = null, transferImageFileInfo = null, phase = LipSyncPhase.Preparing, statusMessage = "Preparing image...")
             try {
                 val prepared = prepareImageForOneImage(appContext, uri)
-                _uiState.value = _uiState.value.copy(transferImageUri = prepared.uri, phase = LipSyncPhase.Idle, statusMessage = "Ready")
+                _uiState.value = _uiState.value.copy(
+                    transferImageUri = prepared.uri,
+                    transferImageFileInfo = prepared.fileInfo,
+                    transferImageWidth = prepared.width,
+                    transferImageHeight = prepared.height,
+                    phase = LipSyncPhase.Idle,
+                    statusMessage = "Ready",
+                    error = null,
+                    saveMessage = null
+                )
             } catch (error: Exception) {
-                val fallbackInfo = OneImageApi.getFileInfo(appContext.contentResolver, uri)
-                _uiState.value = _uiState.value.copy(transferImageUri = uri, phase = LipSyncPhase.Error, error = error.message ?: "Could not prepare the image.", statusMessage = "Image preparation failed")
-                _uiState.value = _uiState.value.copy(audioFileInfo = fallbackInfo)
+                _uiState.value = _uiState.value.copy(
+                    transferImageUri = null,
+                    transferImageFileInfo = null,
+                    phase = LipSyncPhase.Error,
+                    error = error.message ?: "Could not prepare the image.",
+                    statusMessage = "Image preparation failed"
+                )
             }
         }
     }
@@ -156,11 +175,36 @@ class LipSyncViewModel : ViewModel() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(audioUri = uri, audioFileInfo = null, phase = LipSyncPhase.Preparing, statusMessage = "Preparing audio...")
             try {
-                val info = OneImageApi.getFileInfo(appContext.contentResolver, uri)
+                val info = normalizeLipSyncAudioFileInfo(OneImageApi.getFileInfo(appContext.contentResolver, uri))
                 val duration = readAudioDuration(appContext, uri)
-                _uiState.value = _uiState.value.copy(audioFileInfo = info, audioDurationSeconds = duration, audioStartSeconds = 0f, durationSeconds = min(10f, duration.coerceAtLeast(0f)), phase = LipSyncPhase.Idle, statusMessage = "Ready")
+                if (duration > MAX_LIPSYNC_AUDIO_SECONDS) {
+                    error("MP3 must be 10 minutes or shorter.")
+                }
+                if (!info.filename.endsWith(".mp3", ignoreCase = true) &&
+                    info.mimeType != "audio/mpeg" &&
+                    info.mimeType != "audio/mp3"
+                ) {
+                    error("Choose an MP3 file.")
+                }
+                _uiState.value = _uiState.value.copy(
+                    audioUri = uri,
+                    audioFileInfo = info,
+                    audioDurationSeconds = duration,
+                    audioStartSeconds = 0f,
+                    durationSeconds = min(10f, duration.coerceAtLeast(0.1f)),
+                    phase = LipSyncPhase.Idle,
+                    statusMessage = "Ready",
+                    error = null,
+                    saveMessage = null
+                )
             } catch (error: Exception) {
-                _uiState.value = _uiState.value.copy(phase = LipSyncPhase.Error, error = error.message ?: "Could not read the audio file.", statusMessage = "Audio preparation failed")
+                _uiState.value = _uiState.value.copy(
+                    audioUri = null,
+                    audioFileInfo = null,
+                    phase = LipSyncPhase.Error,
+                    error = error.message ?: "Could not read the audio file.",
+                    statusMessage = "Audio preparation failed"
+                )
             }
         }
     }
@@ -170,24 +214,36 @@ class LipSyncViewModel : ViewModel() {
     }
 
     fun updateAudioStart(value: String) {
+        val current = _uiState.value
         val parsed = value.toFloatOrNull() ?: 0f
-        _uiState.value = _uiState.value.copy(audioStartSeconds = parsed.coerceAtLeast(0f), saveMessage = null)
+        val audioDuration = current.audioDurationSeconds.coerceAtLeast(0f)
+        val maxStart = (audioDuration - 0.1f).coerceAtLeast(0f)
+        val nextStart = parsed.coerceIn(0f, maxStart)
+        val remaining = (audioDuration - nextStart).coerceAtLeast(0.1f)
+        _uiState.value = current.copy(
+            audioStartSeconds = nextStart,
+            durationSeconds = current.durationSeconds.coerceAtMost(remaining).coerceAtLeast(0.1f),
+            saveMessage = null
+        )
     }
 
     fun updateDuration(value: String) {
+        val current = _uiState.value
         val parsed = value.toFloatOrNull() ?: 10f
-        _uiState.value = _uiState.value.copy(durationSeconds = parsed.coerceAtLeast(0.1f), saveMessage = null)
+        val remaining = (current.audioDurationSeconds - current.audioStartSeconds).coerceAtLeast(0.1f)
+        _uiState.value = current.copy(durationSeconds = parsed.coerceIn(0.1f, remaining), saveMessage = null)
     }
 
     fun generateLipSync(context: Context, fallbackClientId: String) {
         val appContext = context.applicationContext
         val initial = _uiState.value
         val transferUri = initial.transferImageUri
+        val transferImageFileInfo = initial.transferImageFileInfo
         val audioUri = initial.audioUri
         val audioFileInfo = initial.audioFileInfo
         val prompt = initial.prompt.trim()
 
-        if (transferUri == null || audioUri == null || audioFileInfo == null) {
+        if (transferUri == null || transferImageFileInfo == null || audioUri == null || audioFileInfo == null) {
             _uiState.value = initial.copy(phase = LipSyncPhase.Error, error = "Choose an image and audio file first.")
             return
         }
@@ -211,7 +267,7 @@ class LipSyncViewModel : ViewModel() {
                 val clientId = currentClientId(fallbackClientId)
                 val transport = createTransport(appContext, clientId)
                 val files = mapOf(
-                    "lipImage" to (transferUri to OneImageApi.getFileInfo(appContext.contentResolver, transferUri)),
+                    "lipImage" to (transferUri to transferImageFileInfo),
                     "lipAudio" to (audioUri to audioFileInfo)
                 )
                 transport.setInputFiles(files)
@@ -225,13 +281,14 @@ class LipSyncViewModel : ViewModel() {
                     baseUrl = baseUrl,
                     clientId = clientId,
                     prompt = prompt,
-                    imageFileInfo = OneImageApi.getFileInfo(appContext.contentResolver, transferUri),
+                    imageFileInfo = transferImageFileInfo,
                     audioFileInfo = audioFileInfo,
                     audioStart = initial.audioStartSeconds,
                     duration = initial.durationSeconds,
                     frameRate = 24,
-                    width = 512,
-                    height = 512
+                    width = initial.transferImageWidth,
+                    height = initial.transferImageHeight,
+                    audioDuration = initial.audioDurationSeconds
                 )
 
                 _uiState.value = _uiState.value.copy(phase = LipSyncPhase.Running, statusMessage = "Queued", currentTaskId = taskId)
@@ -264,14 +321,15 @@ class LipSyncViewModel : ViewModel() {
     }
 
     fun loadTask(task: OneImageTask) {
+        val localTask = LocalTaskResultStore.overlayTask(task)
         _uiState.value = _uiState.value.copy(
-            prompt = task.prompt ?: _uiState.value.prompt,
-            currentTaskId = task.id,
-            currentTask = task,
-            results = mergeResults(emptyList(), task.results),
-            phase = phaseForTask(task),
-            statusMessage = task.statusDetails ?: task.status,
-            error = if (task.status == "failed") task.error else null,
+            prompt = localTask.prompt ?: _uiState.value.prompt,
+            currentTaskId = localTask.id,
+            currentTask = localTask,
+            results = mergeResults(emptyList(), localTask.results),
+            phase = phaseForTask(localTask),
+            statusMessage = localTask.statusDetails ?: localTask.status,
+            error = if (localTask.status == "failed") localTask.error else null,
             saveMessage = null
         )
     }
@@ -301,6 +359,7 @@ class LipSyncViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 OneImageApi.deleteTask(baseUrl, currentClientId(fallbackClientId), task.id)
+                LocalTaskResultStore.clearTask(task.id)
                 if (_uiState.value.currentTaskId == task.id) {
                     _uiState.value = _uiState.value.copy(currentTaskId = null, currentTask = null, results = emptyList(), phase = LipSyncPhase.Idle, statusMessage = "Ready")
                 }
@@ -336,16 +395,17 @@ class LipSyncViewModel : ViewModel() {
             clientId = clientId,
             onStatus = { message -> _uiState.value = _uiState.value.copy(statusMessage = message) },
             onFileReceived = { file ->
-                val result = OneImageTaskResult(label = file.label ?: file.filename, url = file.url, filename = file.filename, size = file.size)
+                val result = LocalTaskResultStore.persistReceivedFile(file)
                 val current = _uiState.value
                 _uiState.value = current.copy(results = mergeResults(current.results, listOf(result)), phase = if (current.phase == LipSyncPhase.Restoring) LipSyncPhase.Completed else current.phase, statusMessage = if (current.phase == LipSyncPhase.Restoring) "Completed" else current.statusMessage, error = null)
             }
         )
 
     private fun applyTaskSnapshot(task: OneImageTask) {
+        val localTask = LocalTaskResultStore.overlayTask(task)
         val current = _uiState.value
-        val mergedResults = mergeResults(current.results, task.results)
-        _uiState.value = current.copy(currentTaskId = task.id, currentTask = task, results = mergedResults, phase = phaseForTask(task), statusMessage = task.statusDetails ?: task.status, error = if (task.status == "failed") task.error ?: "Generation failed." else null)
+        val mergedResults = mergeResults(current.results, localTask.results)
+        _uiState.value = current.copy(currentTaskId = localTask.id, currentTask = localTask, results = mergedResults, phase = phaseForTask(localTask), statusMessage = localTask.statusDetails ?: localTask.status, error = if (localTask.status == "failed") localTask.error ?: "Generation failed." else null)
     }
 
     private fun phaseForTask(task: OneImageTask): LipSyncPhase = when (task.status) {
@@ -364,13 +424,16 @@ class LipSyncViewModel : ViewModel() {
             }
             if (matchIndex >= 0) {
                 val existing = merged[matchIndex]
-                merged[matchIndex] = result.copy(label = existing.label.ifBlank { result.label }, filename = result.filename.ifBlank { existing.filename })
+                val preferred = if (existing.isDirectResult() && result.url.startsWith("webrtc://")) existing else result
+                merged[matchIndex] = preferred.copy(label = existing.label.ifBlank { preferred.label }, filename = preferred.filename.ifBlank { existing.filename }, size = preferred.size.takeIf { it > 0L } ?: existing.size)
             } else {
                 merged += result
             }
         }
         return merged
     }
+
+    private fun OneImageTaskResult.isDirectResult(): Boolean = url.isNotBlank() && !url.startsWith("webrtc://")
 
     private fun resultKey(result: OneImageTaskResult): String {
         val raw = result.filename.ifBlank { if (result.url.startsWith("webrtc://")) result.url.removePrefix("webrtc://") else "" }
@@ -418,26 +481,23 @@ class LipSyncViewModel : ViewModel() {
 
     private suspend fun prepareImageForOneImage(context: Context, uri: Uri): PreparedImage = withContext(Dispatchers.IO) {
         val original = decodeBitmap(context, uri)
-        val ratio = min(1536f / original.width.toFloat(), 1536f / original.height.toFloat()).coerceAtMost(1f)
-        val bitmap = if (ratio < 1f) {
-            Bitmap.createScaledBitmap(original, (original.width * ratio).roundToInt().coerceAtLeast(1), (original.height * ratio).roundToInt().coerceAtLeast(1), true)
-        } else {
-            original
-        }
+        val fitted = fitLipSyncDimensions(original.width, original.height)
+        val bitmap = if (fitted.first != original.width || fitted.second != original.height) {
+            Bitmap.createScaledBitmap(original, fitted.first, fitted.second, true)
+        } else original
         val directory = File(context.cacheDir, "oneimage-inputs").apply { mkdirs() }
-        val file = File(directory, "oneimage_input_${System.currentTimeMillis()}.webp")
+        val file = File(directory, "lipsync_input_${System.currentTimeMillis()}.jpg")
         file.outputStream().use { output ->
-            @Suppress("DEPRECATION")
-            val format = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                Bitmap.CompressFormat.WEBP_LOSSY
-            } else {
-                Bitmap.CompressFormat.WEBP
-            }
-            bitmap.compress(format, 85, output)
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 88, output)
         }
         if (bitmap !== original) bitmap.recycle()
         original.recycle()
-        PreparedImage(uri = Uri.fromFile(file), fileInfo = OneImageFileInfo(filename = file.name, mimeType = "image/webp", size = file.length()))
+        PreparedImage(
+            uri = Uri.fromFile(file),
+            fileInfo = OneImageFileInfo(filename = file.name, mimeType = "image/jpeg", size = file.length()),
+            width = fitted.first,
+            height = fitted.second
+        )
     }
 
     private fun decodeBitmap(context: Context, uri: Uri): Bitmap {
@@ -459,6 +519,23 @@ class LipSyncViewModel : ViewModel() {
                 retriever.release()
             }
         }.getOrDefault(0f).takeIf { it > 0f } ?: error("Could not read audio duration.")
+    }
+
+    private fun normalizeLipSyncAudioFileInfo(info: OneImageFileInfo): OneImageFileInfo {
+        val normalizedMime = when {
+            info.mimeType.equals("audio/mpeg", ignoreCase = true) -> "audio/mpeg"
+            info.mimeType.equals("audio/mp3", ignoreCase = true) -> "audio/mp3"
+            info.filename.endsWith(".mp3", ignoreCase = true) -> "audio/mpeg"
+            else -> info.mimeType
+        }
+        return info.copy(mimeType = normalizedMime)
+    }
+
+    private fun fitLipSyncDimensions(width: Int, height: Int): Pair<Int, Int> {
+        val scale = min(1f, 1000f / maxOf(width, height).toFloat())
+        val fittedWidth = maxOf(256, ((width * scale).roundToInt() / 32) * 32).coerceAtLeast(256)
+        val fittedHeight = maxOf(256, ((height * scale).roundToInt() / 32) * 32).coerceAtLeast(256)
+        return fittedWidth to fittedHeight
     }
     private suspend fun copyResultToPictures(context: Context, result: OneImageTaskResult): Uri = withContext(Dispatchers.IO) {
         if (result.url.startsWith("webrtc://")) error("This result needs to be restored before saving.")
@@ -508,7 +585,7 @@ class LipSyncViewModel : ViewModel() {
             if (url.isBlank()) return@mapNotNull null
             OneImageTaskResult(label = string(map["label"]).ifBlank { "Result" }, url = url, filename = string(map["filename"]), size = long(map["size"]))
         } ?: emptyList()
-        return OneImageTask(id = document.id, type = string(data["type"]).ifBlank { "lipsync" }, status = string(data["status"]).ifBlank { "pending" }, statusDetails = string(data["status_details"]).ifBlank { null }, error = string(data["error"]).ifBlank { null }, progressValue = number(data["progress_value"]), progressMax = number(data["progress_max"]), prompt = string(params?.get("prompt")).ifBlank { string(data["prompt"]).ifBlank { null } }, isLightning = (params?.get("isLightning") as? Boolean) ?: true, createdAtMs = firestoreMillis(data["createdAt"]).takeIf { it > 0L } ?: long(data["createdAtMs"]), useWebRTC = data["useWebRTC"] as? Boolean ?: false, resultRestoreUnavailable = data["resultRestoreUnavailable"] as? Boolean ?: false, results = results)
+        return LocalTaskResultStore.overlayTask(OneImageTask(id = document.id, type = string(data["type"]).ifBlank { "lipsync" }, status = string(data["status"]).ifBlank { "pending" }, statusDetails = string(data["status_details"]).ifBlank { null }, error = string(data["error"]).ifBlank { null }, progressValue = number(data["progress_value"]), progressMax = number(data["progress_max"]), prompt = string(params?.get("prompt")).ifBlank { string(data["prompt"]).ifBlank { null } }, isLightning = (params?.get("isLightning") as? Boolean) ?: true, createdAtMs = firestoreMillis(data["createdAt"]).takeIf { it > 0L } ?: long(data["createdAtMs"]), useWebRTC = data["useWebRTC"] as? Boolean ?: false, resultRestoreUnavailable = data["resultRestoreUnavailable"] as? Boolean ?: false, results = results))
     }
 
     private fun firestoreMillis(value: Any?): Long = when (value) {
@@ -522,7 +599,12 @@ class LipSyncViewModel : ViewModel() {
     private fun long(value: Any?): Long = (value as? Number)?.toLong() ?: 0L
     private fun string(value: Any?): String = value?.toString() ?: ""
 
-    private data class PreparedImage(val uri: Uri, val fileInfo: OneImageFileInfo)
+    private data class PreparedImage(
+        val uri: Uri,
+        val fileInfo: OneImageFileInfo,
+        val width: Int,
+        val height: Int
+    )
 }
 
 fun OneImageTask.createdAtText(): String {

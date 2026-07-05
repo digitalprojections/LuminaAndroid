@@ -21,6 +21,7 @@ import com.oneimage.android.BuildConfig
 import com.oneimage.android.api.OneImageAccountProfile
 import com.oneimage.android.api.OneImageApi
 import com.oneimage.android.api.OneImageFileInfo
+import com.oneimage.android.api.LocalTaskResultStore
 import com.oneimage.android.api.OneImageQueueStatus
 import com.oneimage.android.api.OneImageTask
 import com.oneimage.android.api.OneImageTaskResult
@@ -40,6 +41,7 @@ import kotlin.math.roundToInt
 
 private const val TASK_HISTORY_LIMIT = 250L
 private const val ENGINE_STATUS_STALE_MS = 90_000L
+private const val MAX_INPUT_IMAGE_LONG_EDGE = 1080f
 private const val VIDEO_CREDITS_PER_SECOND = 4
 
 enum class VideoGenPhase {
@@ -337,15 +339,16 @@ class VideoGenViewModel : ViewModel() {
     }
 
     fun loadTask(task: OneImageTask) {
+        val localTask = LocalTaskResultStore.overlayTask(task)
         _uiState.value = _uiState.value.copy(
-            prompt = task.prompt ?: _uiState.value.prompt,
-            isLightning = task.isLightning,
-            currentTaskId = task.id,
-            currentTask = task,
-            results = mergeResults(emptyList(), task.results),
-            phase = phaseForTask(task),
-            statusMessage = task.statusDetails ?: task.status,
-            error = if (task.status == "failed") task.error else null,
+            prompt = localTask.prompt ?: _uiState.value.prompt,
+            isLightning = localTask.isLightning,
+            currentTaskId = localTask.id,
+            currentTask = localTask,
+            results = mergeResults(emptyList(), localTask.results),
+            phase = phaseForTask(localTask),
+            statusMessage = localTask.statusDetails ?: localTask.status,
+            error = if (localTask.status == "failed") localTask.error else null,
             saveMessage = null
         )
     }
@@ -383,6 +386,7 @@ class VideoGenViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 OneImageApi.deleteTask(baseUrl, currentClientId(fallbackClientId), task.id)
+                LocalTaskResultStore.clearTask(task.id)
                 if (_uiState.value.currentTaskId == task.id) {
                     _uiState.value = _uiState.value.copy(
                         currentTaskId = null,
@@ -430,12 +434,7 @@ class VideoGenViewModel : ViewModel() {
                 _uiState.value = current.copy(statusMessage = message)
             },
             onFileReceived = { file ->
-                val result = OneImageTaskResult(
-                    label = file.label ?: file.filename,
-                    url = file.url,
-                    filename = file.filename,
-                    size = file.size
-                )
+                val result = LocalTaskResultStore.persistReceivedFile(file)
                 val current = _uiState.value
                 _uiState.value = current.copy(
                     results = mergeResults(current.results, listOf(result)),
@@ -447,15 +446,16 @@ class VideoGenViewModel : ViewModel() {
         )
 
     private fun applyTaskSnapshot(task: OneImageTask) {
+        val localTask = LocalTaskResultStore.overlayTask(task)
         val current = _uiState.value
-        val mergedResults = mergeResults(current.results, task.results)
+        val mergedResults = mergeResults(current.results, localTask.results)
         _uiState.value = current.copy(
-            currentTaskId = task.id,
-            currentTask = task,
+            currentTaskId = localTask.id,
+            currentTask = localTask,
             results = mergedResults,
-            phase = phaseForTask(task),
-            statusMessage = task.statusDetails ?: task.status,
-            error = if (task.status == "failed") task.error ?: "Generation failed." else null
+            phase = phaseForTask(localTask),
+            statusMessage = localTask.statusDetails ?: localTask.status,
+            error = if (localTask.status == "failed") localTask.error ?: "Generation failed." else null
         )
     }
 
@@ -476,9 +476,11 @@ class VideoGenViewModel : ViewModel() {
             }
             if (matchIndex >= 0) {
                 val existing = merged[matchIndex]
-                merged[matchIndex] = result.copy(
-                    label = existing.label.ifBlank { result.label },
-                    filename = result.filename.ifBlank { existing.filename }
+                val preferred = if (existing.isDirectResult() && result.url.startsWith("webrtc://")) existing else result
+                merged[matchIndex] = preferred.copy(
+                    label = existing.label.ifBlank { preferred.label },
+                    filename = preferred.filename.ifBlank { existing.filename },
+                    size = preferred.size.takeIf { it > 0L } ?: existing.size
                 )
             } else {
                 merged += result
@@ -486,6 +488,9 @@ class VideoGenViewModel : ViewModel() {
         }
         return merged
     }
+
+    private fun OneImageTaskResult.isDirectResult(): Boolean =
+        url.isNotBlank() && !url.startsWith("webrtc://")
 
     private fun resultKey(result: OneImageTaskResult): String {
         val raw = result.filename.ifBlank {
@@ -549,7 +554,7 @@ class VideoGenViewModel : ViewModel() {
 
     private suspend fun prepareImageForOneImage(context: Context, uri: Uri): PreparedImage = withContext(Dispatchers.IO) {
         val original = decodeBitmap(context, uri)
-        val ratio = min(1536f / original.width.toFloat(), 1536f / original.height.toFloat()).coerceAtMost(1f)
+        val ratio = min(MAX_INPUT_IMAGE_LONG_EDGE / original.width.toFloat(), MAX_INPUT_IMAGE_LONG_EDGE / original.height.toFloat()).coerceAtMost(1f)
         val bitmap = if (ratio < 1f) {
             Bitmap.createScaledBitmap(
                 original,
@@ -651,7 +656,8 @@ class VideoGenViewModel : ViewModel() {
                 size = long(map["size"])
             )
         } ?: emptyList()
-        return OneImageTask(
+        return LocalTaskResultStore.overlayTask(
+            OneImageTask(
             id = document.id,
             type = string(data["type"]).ifBlank { "image" },
             status = string(data["status"]).ifBlank { "pending" },
@@ -665,6 +671,7 @@ class VideoGenViewModel : ViewModel() {
             useWebRTC = data["useWebRTC"] as? Boolean ?: false,
             resultRestoreUnavailable = data["resultRestoreUnavailable"] as? Boolean ?: false,
             results = results
+        )
         )
     }
     private fun firestoreMillis(value: Any?): Long = when (value) {

@@ -1,8 +1,14 @@
 package com.oneimage.android.ui.meshmodel
 
 import android.content.Context
+import android.net.Uri
 import android.provider.Settings
+import android.util.Log
 import android.view.ViewGroup
+import android.webkit.WebResourceResponse
+import android.webkit.ConsoleMessage
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -48,7 +54,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.oneimage.android.api.OneImageTask
 import com.oneimage.android.api.OneImageTaskResult
+import com.oneimage.android.ui.shared.CancelTaskConfirmationDialog
 import com.oneimage.android.ui.shared.WorkflowHistoryList
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -81,32 +89,38 @@ fun MeshModelScreen(
 
     val result = state.results.firstOrNull()
     val modelUrl = result?.url
-    var renderUrl by remember(modelUrl) { mutableStateOf<String?>(null) }
+    var viewerSource by remember(modelUrl) { mutableStateOf<MeshViewerSource?>(null) }
     var isPreparingViewer by remember(modelUrl) { mutableStateOf(false) }
+    var cancelAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
     LaunchedEffect(modelUrl) {
         val url = modelUrl
         if (url == null) {
-            renderUrl = null
+            viewerSource = null
             return@LaunchedEffect
         }
         if (url.startsWith("http://") || url.startsWith("https://")) {
-            renderUrl = url
+            viewerSource = MeshViewerSource(renderUrl = url)
         } else if (url.startsWith("file:") || url.startsWith("content:")) {
             isPreparingViewer = true
-            withContext(Dispatchers.IO) {
-                runCatching {
-                    val uri = android.net.Uri.parse(url)
-                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                    if (bytes != null) {
-                        val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-                        renderUrl = "data:model/gltf-binary;base64,$base64"
-                    }
-                }
+            viewerSource = withContext(Dispatchers.IO) {
+                runCatching { cacheMeshViewerFile(context, Uri.parse(url)) }.getOrNull()
             }
             isPreparingViewer = false
+        } else {
+            viewerSource = null
         }
     }
+
+    CancelTaskConfirmationDialog(
+        visible = cancelAction != null,
+        onDismiss = { cancelAction = null },
+        onConfirm = {
+            val action = cancelAction
+            cancelAction = null
+            action?.invoke()
+        }
+    )
 
     val canGenerate = state.sourceImageUri != null &&
             state.transferImageUri != null &&
@@ -153,7 +167,7 @@ fun MeshModelScreen(
                 state = state,
                 canGenerate = canGenerate,
                 onGenerate = { viewModel.generateMesh(context, clientId) },
-                onCancel = { viewModel.cancelCurrentTask(clientId) }
+                onCancel = { cancelAction = { viewModel.cancelCurrentTask(clientId) } }
             )
 
             StatusPanel(state)
@@ -161,7 +175,7 @@ fun MeshModelScreen(
             OutputPanel(
                 state = state,
                 result = result,
-                renderUrl = renderUrl,
+                viewerSource = viewerSource,
                 isPreparingViewer = isPreparingViewer,
                 viewerBackground = viewerBackground,
                 onBackgroundChange = { color ->
@@ -183,8 +197,10 @@ fun MeshModelScreen(
                 onRestore = { task -> viewModel.restoreTask(context, clientId, task) },
                 onDelete = { task -> viewModel.deleteTask(clientId, task) },
                 onCancel = { task ->
-                    viewModel.loadTask(task)
-                    viewModel.cancelCurrentTask(clientId)
+                    cancelAction = {
+                        viewModel.loadTask(task)
+                        viewModel.cancelCurrentTask(clientId)
+                    }
                 }
             )
         }
@@ -403,7 +419,7 @@ private fun StatusPanel(state: MeshModelUiState) {
 private fun OutputPanel(
     state: MeshModelUiState,
     result: OneImageTaskResult?,
-    renderUrl: String?,
+    viewerSource: MeshViewerSource?,
     isPreparingViewer: Boolean,
     viewerBackground: String,
     onBackgroundChange: (String) -> Unit,
@@ -440,10 +456,10 @@ private fun OutputPanel(
                     isPreparingViewer -> {
                         CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                     }
-                    renderUrl != null -> {
+                    viewerSource != null -> {
                         AndroidView(
                             factory = { ctx ->
-                                WebView(ctx).apply {
+                                MeshViewerWebView(ctx).apply {
                                     layoutParams = ViewGroup.LayoutParams(
                                         ViewGroup.LayoutParams.MATCH_PARENT,
                                         ViewGroup.LayoutParams.MATCH_PARENT
@@ -452,38 +468,73 @@ private fun OutputPanel(
                                     settings.domStorageEnabled = true
                                     settings.allowFileAccess = true
                                     settings.allowContentAccess = true
-                                    webViewClient = WebViewClient()
-                                    webChromeClient = WebChromeClient()
+                                    settings.allowFileAccessFromFileURLs = true
+                                    settings.allowUniversalAccessFromFileURLs = true
+                                    webViewClient = object : WebViewClient() {
+                                        override fun shouldInterceptRequest(
+                                            view: WebView?,
+                                            request: WebResourceRequest?
+                                        ): WebResourceResponse? {
+                                            val source = (view as? MeshViewerWebView)?.viewerSource ?: return null
+                                            val localFile = source.localFile ?: return null
+                                            val requestUri = request?.url ?: return null
+                                            if (requestUri.scheme != "https" ||
+                                                requestUri.host != MESH_VIEWER_HOST ||
+                                                requestUri.path != source.localPath
+                                            ) {
+                                                return null
+                                            }
+                                            return runCatching {
+                                                WebResourceResponse(
+                                                    source.mimeType ?: "application/octet-stream",
+                                                    null,
+                                                    localFile.inputStream()
+                                                )
+                                            }.getOrElse { error ->
+                                                Log.e("MeshModelWebView", "Could not serve local mesh file", error)
+                                                null
+                                            }
+                                        }
+
+                                        override fun onReceivedError(
+                                            view: WebView?,
+                                            request: WebResourceRequest?,
+                                            error: WebResourceError?
+                                        ) {
+                                            Log.e(
+                                                "MeshModelWebView",
+                                                "Load error ${error?.errorCode}: ${error?.description} for ${request?.url}"
+                                            )
+                                        }
+                                    }
+                                    webChromeClient = object : WebChromeClient() {
+                                        override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+                                            consoleMessage?.let {
+                                                Log.d(
+                                                    "MeshModelWebView",
+                                                    "${it.messageLevel()} ${it.sourceId()}:${it.lineNumber()} ${it.message()}"
+                                                )
+                                            }
+                                            return true
+                                        }
+                                    }
                                     setBackgroundColor(android.graphics.Color.TRANSPARENT)
                                 }
                             },
                             update = { webView ->
-                                val html = """
-                                    <!DOCTYPE html>
-                                    <html>
-                                    <head>
-                                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                                        <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
-                                        <style>
-                                            body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: $viewerBackground; }
-                                            model-viewer { width: 100%; height: 100%; background-color: $viewerBackground; }
-                                        </style>
-                                    </head>
-                                    <body>
-                                        <model-viewer 
-                                            src="$renderUrl" 
-                                            camera-controls 
-                                            auto-rotate 
-                                            shadow-intensity="0.7" 
-                                            exposure="1" 
-                                            tone-mapping="neutral" 
-                                            environment-image="neutral" 
-                                            interaction-prompt="none">
-                                        </model-viewer>
-                                    </body>
-                                    </html>
-                                """.trimIndent()
-                                webView.loadDataWithBaseURL("https://ajax.googleapis.com", html, "text/html", "UTF-8", null)
+                                webView.viewerSource = viewerSource
+                                if (webView.loadedRenderUrl != viewerSource.renderUrl) {
+                                    webView.loadedRenderUrl = viewerSource.renderUrl
+                                    val html = buildMeshViewerHtml(
+                                        renderUrl = viewerSource.renderUrl,
+                                        viewerBackground = viewerBackground
+                                    )
+                                    val baseUrl = "https://$MESH_VIEWER_HOST/"
+                                    webView.loadDataWithBaseURL(baseUrl, html, "text/html", "UTF-8", null)
+                                } else if (webView.loadedBackground != viewerBackground) {
+                                    applyMeshViewerBackground(webView, viewerBackground)
+                                }
+                                webView.loadedBackground = viewerBackground
                             },
                             modifier = Modifier.fillMaxSize()
                         )
@@ -511,7 +562,7 @@ private fun OutputPanel(
                 }
             }
 
-            if (result != null && renderUrl != null) {
+            if (result != null && viewerSource != null) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -564,6 +615,124 @@ private fun OutputPanel(
             }
         }
     }
+}
+
+private fun cacheMeshViewerFile(context: Context, uri: Uri): MeshViewerSource? {
+    val directory = File(context.cacheDir, "mesh-viewer").apply { mkdirs() }
+    val extension = when (context.contentResolver.getType(uri)) {
+        "model/gltf-binary" -> ".glb"
+        "model/gltf+json" -> ".gltf"
+        else -> null
+    } ?: uri.lastPathSegment
+        ?.substringAfterLast('.', missingDelimiterValue = "")
+        ?.takeIf { it.isNotBlank() }
+        ?.let { ".$it" }
+        ?: ".glb"
+    val file = File(directory, "viewer-${System.currentTimeMillis()}$extension")
+    val inputStream = when (uri.scheme?.lowercase()) {
+        "content" -> context.contentResolver.openInputStream(uri)
+        "file" -> uri.path?.let { File(it).inputStream() }
+        else -> null
+    }
+    inputStream?.use { input ->
+        file.outputStream().use { output -> input.copyTo(output) }
+    } ?: return null
+    val mimeType = when (extension.lowercase()) {
+        ".glb" -> "model/gltf-binary"
+        ".gltf" -> "model/gltf+json"
+        ".obj" -> "text/plain"
+        ".fbx" -> "application/octet-stream"
+        else -> context.contentResolver.getType(uri) ?: "application/octet-stream"
+    }
+    val localPath = "/oneimage-mesh/${file.name}"
+    return MeshViewerSource(
+        renderUrl = "https://$MESH_VIEWER_HOST$localPath",
+        localFile = file,
+        localPath = localPath,
+        mimeType = mimeType
+    )
+}
+
+private data class MeshViewerSource(
+    val renderUrl: String,
+    val localFile: File? = null,
+    val localPath: String? = null,
+    val mimeType: String? = null
+)
+
+private class MeshViewerWebView(context: Context) : WebView(context) {
+    var viewerSource: MeshViewerSource? = null
+    var loadedRenderUrl: String? = null
+    var loadedBackground: String? = null
+}
+
+private const val MESH_VIEWER_HOST = "appassets.androidplatform.net"
+
+private fun buildMeshViewerHtml(renderUrl: String, viewerBackground: String): String = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
+        <style>
+            :root { --viewer-bg: $viewerBackground; }
+            body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: var(--viewer-bg); }
+            model-viewer { width: 100%; height: 100%; background-color: var(--viewer-bg); }
+        </style>
+    </head>
+    <body>
+        <model-viewer id="mesh-viewer"
+            src="$renderUrl"
+            camera-controls
+            auto-rotate
+            shadow-intensity="0.7"
+            exposure="1"
+            tone-mapping="neutral"
+            environment-image="neutral"
+            interaction-prompt="none">
+        </model-viewer>
+        <script type="module">
+            const attachMeshViewerLogging = () => {
+                const viewer = document.getElementById('mesh-viewer');
+                if (!viewer) return;
+                viewer.addEventListener('load', () => console.log('Mesh model loaded'));
+                viewer.addEventListener('error', (event) => {
+                    const detail = event?.detail;
+                    const sourceError = detail?.sourceError;
+                    console.error(
+                      'Mesh model failed',
+                      sourceError?.message || detail?.type || 'unknown error'
+                    );
+                });
+            };
+            if (customElements.get('model-viewer')) {
+                attachMeshViewerLogging();
+            } else {
+                customElements.whenDefined('model-viewer').then(attachMeshViewerLogging);
+            }
+        </script>
+    </body>
+    </html>
+""".trimIndent()
+
+private fun applyMeshViewerBackground(webView: WebView, viewerBackground: String) {
+    val escapedBackground = viewerBackground
+        .replace("\\", "\\\\")
+        .replace("'", "\\'")
+    webView.evaluateJavascript(
+        """
+        (() => {
+          document.documentElement.style.setProperty('--viewer-bg', '$escapedBackground');
+          const viewer = document.getElementById('mesh-viewer');
+          if (viewer) {
+            viewer.style.backgroundColor = '$escapedBackground';
+          }
+          document.body.style.backgroundColor = '$escapedBackground';
+          return true;
+        })();
+        """.trimIndent(),
+        null
+    )
 }
 
 // Extension function to help display custom sized icons.

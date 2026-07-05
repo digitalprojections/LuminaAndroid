@@ -74,7 +74,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.oneimage.android.api.OneImageTask
 import com.oneimage.android.api.OneImageTaskResult
+import com.oneimage.android.ui.shared.ResultVideoPreview
 import com.oneimage.android.ui.shared.WorkflowHistoryList
+import com.oneimage.android.ui.shared.CancelTaskConfirmationDialog
+import com.oneimage.android.ui.shared.isPlayableVideoResult
 
 // Video only expects a single video output, no angles needed.
 
@@ -95,6 +98,7 @@ fun VideoGenScreen(
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) viewModel.selectImage(context, uri, pickingStart)
     }
+    var cancelAction by remember { androidx.compose.runtime.mutableStateOf<(() -> Unit)?>(null) }
     val canGenerate = state.startSourceImageUri != null &&
         state.startTransferImageUri != null &&
         state.endSourceImageUri != null &&
@@ -103,6 +107,16 @@ fun VideoGenScreen(
         !state.isBusy &&
         state.engineReady &&
         state.hasEnoughCredits
+
+    CancelTaskConfirmationDialog(
+        visible = cancelAction != null,
+        onDismiss = { cancelAction = null },
+        onConfirm = {
+            val action = cancelAction
+            cancelAction = null
+            action?.invoke()
+        }
+    )
 
     Scaffold(
         topBar = {
@@ -176,7 +190,7 @@ fun VideoGenScreen(
 
             if (state.currentTaskId != null && state.phase == VideoGenPhase.Running) {
                 OutlinedButton(
-                    onClick = { viewModel.cancelCurrentTask(clientId) },
+                    onClick = { cancelAction = { viewModel.cancelCurrentTask(clientId) } },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp)
                 ) {
@@ -206,8 +220,10 @@ fun VideoGenScreen(
                 onRestore = { task -> viewModel.restoreTask(context, clientId, task) },
                 onDelete = { task -> viewModel.deleteTask(clientId, task) },
                 onCancel = { task ->
-                    viewModel.loadTask(task)
-                    viewModel.cancelCurrentTask(clientId)
+                    cancelAction = {
+                        viewModel.loadTask(task)
+                        viewModel.cancelCurrentTask(clientId)
+                    }
                 }
             )
         }
@@ -501,6 +517,10 @@ private fun AngleSlot(
                 contentAlignment = Alignment.Center
             ) {
                 when {
+                    renderable && result != null && isPlayableVideoResult(result) -> ResultVideoPreview(
+                        result = result,
+                        modifier = Modifier.fillMaxSize()
+                    )
                     renderable && result != null -> AsyncImage(
                         model = result.url,
                         contentDescription = angle,
@@ -517,10 +537,26 @@ private fun AngleSlot(
                 }
             }
             if (renderable && result != null) {
-                TextButton(onClick = { onSave(result) }, modifier = Modifier.align(Alignment.End)) {
-                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Save")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (isPlayableVideoResult(result)) {
+                        Text(
+                            text = if (result.url.startsWith("file:") || result.url.startsWith("content:")) "Available locally" else "Streaming result",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f)
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                    TextButton(onClick = { onSave(result) }) {
+                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Save")
+                    }
                 }
             }
         }

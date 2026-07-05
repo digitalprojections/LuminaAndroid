@@ -30,6 +30,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Refresh
@@ -48,6 +50,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -79,14 +82,19 @@ import com.oneimage.android.BuildConfig
 import com.oneimage.android.api.KeyframeWorkflowInput
 import com.oneimage.android.api.OneImageApi
 import com.oneimage.android.api.OneImageFileInfo
+import com.oneimage.android.api.LocalTaskResultStore
 import com.oneimage.android.api.OneImageTask
 import com.oneimage.android.api.OneImageTaskResult
 import com.oneimage.android.api.OneImageWebRtcClient
+import com.oneimage.android.api.prepareImageTransfer
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.oneimage.android.ui.shared.ResultVideoPreview
 import com.oneimage.android.ui.shared.WorkflowHistoryList
+import com.oneimage.android.ui.shared.CancelTaskConfirmationDialog
+import com.oneimage.android.ui.shared.isPlayableVideoResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -96,6 +104,15 @@ import java.net.URL
 
 private const val DEFAULT_IMPORTANT_DESCRIPTION = "describe the image in smallest details, describe it as a high definition game asset style image asset. Do not describe as pixel art, because it is high definition"
 private const val TASK_HISTORY_LIMIT = 250L
+private const val STORY_PARAGRAPH_LIMIT = 512
+private val STORY_ASPECT_RATIOS = listOf(
+    "16:9 (Widescreen)",
+    "9:16 (Vertical)",
+    "1:1 (Square)",
+    "4:3 (Landscape)",
+    "3:4 (Portrait)",
+    "21:9 (Cinematic)"
+)
 
 enum class WorkflowKind {
     CharacterReplacement,
@@ -231,7 +248,13 @@ fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
     val selectedUris = remember(spec.kind) { mutableStateMapOf<String, Uri>() }
     val fileInfos = remember(spec.kind) { mutableStateMapOf<String, OneImageFileInfo>() }
     val durations = remember(spec.kind) { mutableStateMapOf<String, Float>() }
-    val textValues = remember(spec.kind) { mutableStateMapOf<String, String>().apply { spec.textSlots.forEach { put(it.id, it.defaultValue) } } }
+    val textValues = remember(spec.kind) {
+        mutableStateMapOf<String, String>().apply {
+            spec.textSlots.forEach { put(it.id, it.defaultValue) }
+            if (spec.kind == WorkflowKind.StoryImages) put("aspectRatio", STORY_ASPECT_RATIOS.first())
+        }
+    }
+    var keyframeCount by remember(spec.kind) { mutableStateOf(if (spec.kind == WorkflowKind.Keyframes) 2 else 0) }
     var pendingSlot by remember { mutableStateOf<WorkflowFileSlot?>(null) }
     var isBusy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Ready") }
@@ -240,6 +263,7 @@ fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
     var results by remember { mutableStateOf<List<OneImageTaskResult>>(emptyList()) }
     var history by remember(spec.kind) { mutableStateOf<List<OneImageTask>>(emptyList()) }
     var transport by remember { mutableStateOf<OneImageWebRtcClient?>(null) }
+    var cancelAction by remember(spec.kind) { mutableStateOf<(() -> Unit)?>(null) }
 
     val surfaceGradient = Brush.verticalGradient(
         colors = listOf(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.background)
@@ -251,10 +275,22 @@ fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
         if (uri != null && slot != null) {
             scope.launch {
                 try {
-                    selectedUris[slot.id] = uri
-                    fileInfos[slot.id] = OneImageApi.getFileInfo(context.contentResolver, uri)
                     if (slot.mime.startsWith("video") || slot.mime.startsWith("audio")) {
+                        selectedUris[slot.id] = uri
+                        fileInfos[slot.id] = OneImageApi.getFileInfo(context.contentResolver, uri)
                         durations[slot.id] = readMediaDurationSeconds(context, uri)
+                        if (spec.kind == WorkflowKind.CharacterReplacement && slot.id == "characterVideo") {
+                            val maxDuration = durations[slot.id]?.coerceAtMost(15f)?.coerceAtLeast(0.1f) ?: 5f
+                            val current = textValues["duration"]?.toFloatOrNull() ?: maxDuration.coerceAtMost(5f)
+                            textValues["duration"] = String.format("%.1f", current.coerceIn(0.1f, maxDuration))
+                        }
+                    } else if (slot.mime.startsWith("image")) {
+                        val prepared = prepareImageTransfer(context, uri, slot.id)
+                        selectedUris[slot.id] = prepared.uri
+                        fileInfos[slot.id] = prepared.fileInfo
+                    } else {
+                        selectedUris[slot.id] = uri
+                        fileInfos[slot.id] = OneImageApi.getFileInfo(context.contentResolver, uri)
                     }
                     error = null
                 } catch (e: Exception) {
@@ -289,17 +325,19 @@ fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
                     val openTaskId = currentTask?.id
                     val refreshedTask = openTaskId?.let { taskId -> tasks.firstOrNull { it.id == taskId } }
                     if (refreshedTask != null) {
-                        currentTask = refreshedTask
-                        results = mergeResults(results, refreshedTask.results)
-                        status = refreshedTask.statusDetails ?: refreshedTask.status
-                        error = if (refreshedTask.status == "failed") refreshedTask.error ?: "Workflow failed." else error
-                        isBusy = refreshedTask.status in setOf("pending", "processing", "initializing")
+                        val localTask = LocalTaskResultStore.overlayTask(refreshedTask)
+                        currentTask = localTask
+                        results = mergeResults(results, localTask.results)
+                        status = localTask.statusDetails ?: localTask.status
+                        error = if (localTask.status == "failed") localTask.error ?: "Workflow failed." else error
+                        isBusy = localTask.status in setOf("pending", "processing", "initializing")
                     } else if (openTaskId == null) {
                         tasks.firstOrNull { it.status in setOf("pending", "processing", "initializing") }?.let { activeTask ->
-                            currentTask = activeTask
-                            results = mergeResults(results, activeTask.results)
-                            status = activeTask.statusDetails ?: activeTask.status
-                            error = if (activeTask.status == "failed") activeTask.error ?: "Workflow failed." else error
+                            val localTask = LocalTaskResultStore.overlayTask(activeTask)
+                            currentTask = localTask
+                            results = mergeResults(results, localTask.results)
+                            status = localTask.statusDetails ?: localTask.status
+                            error = if (localTask.status == "failed") localTask.error ?: "Workflow failed." else error
                             isBusy = true
                         }
                     }
@@ -309,9 +347,30 @@ fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
         }
     }
 
-    val ready = spec.fileSlots.all { fileInfos[it.id] != null } && spec.textSlots.all { slot ->
-        slot.id in setOf("stylePrompt", "description", "negativePrompt") || !textValues[slot.id].orEmpty().isBlank()
+    val activeFileSlots = if (spec.kind == WorkflowKind.Keyframes) {
+        (0 until keyframeCount).map(::keyframeFileSlot)
+    } else {
+        spec.fileSlots
     }
+    val storyParagraphs = if (spec.kind == WorkflowKind.StoryImages) storyParagraphs(textValues["storyPrompt"].orEmpty()) else emptyList()
+    val storyPromptLimitExceeded = storyParagraphs.any { it.length > STORY_PARAGRAPH_LIMIT }
+    val ready = activeFileSlots.all { fileInfos[it.id] != null } && when (spec.kind) {
+        WorkflowKind.Keyframes -> keyframeCount >= 2
+        WorkflowKind.StoryImages -> storyParagraphs.isNotEmpty() && !storyPromptLimitExceeded
+        else -> spec.textSlots.all { slot ->
+            slot.id in setOf("stylePrompt", "description", "negativePrompt") || !textValues[slot.id].orEmpty().isBlank()
+        }
+    }
+
+    CancelTaskConfirmationDialog(
+        visible = cancelAction != null,
+        onDismiss = { cancelAction = null },
+        onConfirm = {
+            val action = cancelAction
+            cancelAction = null
+            action?.invoke()
+        }
+    )
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -351,29 +410,72 @@ fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
         ) {
             StatusCard(status = status, task = currentTask, isBusy = isBusy, error = error)
 
-            spec.fileSlots.forEach { slot ->
-                FileSlotCard(
-                    slot = slot,
-                    fileInfo = fileInfos[slot.id],
-                    duration = durations[slot.id],
+            if (spec.kind == WorkflowKind.Keyframes) {
+                KeyframesControls(
+                    count = keyframeCount,
+                    fileInfos = fileInfos,
+                    textValues = textValues,
                     enabled = !isBusy,
-                    onPick = {
+                    onPick = { slot ->
                         pendingSlot = slot
                         picker.launch(slot.mime)
+                    },
+                    onAdd = { if (keyframeCount < 8) keyframeCount += 1 },
+                    onRemove = { index ->
+                        if (keyframeCount > 2 && index == keyframeCount - 1) {
+                            val slotId = keyframeFileSlot(index).id
+                            selectedUris.remove(slotId)
+                            fileInfos.remove(slotId)
+                            textValues.remove(keyframePromptId(index))
+                            textValues.remove(keyframeDurationId(index))
+                            keyframeCount -= 1
+                        }
                     }
                 )
-            }
+            } else {
+                spec.fileSlots.forEach { slot ->
+                    FileSlotCard(
+                        slot = slot,
+                        fileInfo = fileInfos[slot.id],
+                        duration = durations[slot.id],
+                        enabled = !isBusy,
+                        onPick = {
+                            pendingSlot = slot
+                            picker.launch(slot.mime)
+                        }
+                    )
+                }
 
-            spec.textSlots.forEach { slot ->
-                OutlinedTextField(
-                    value = textValues[slot.id].orEmpty(),
-                    onValueChange = { textValues[slot.id] = it },
-                    label = { Text(slot.label) },
-                    placeholder = { Text(slot.placeholder) },
-                    minLines = slot.minLines,
-                    enabled = !isBusy,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                spec.textSlots.forEach { slot ->
+                    if (spec.kind == WorkflowKind.CharacterReplacement && slot.id == "duration") {
+                        CharacterDurationControl(
+                            sourceDuration = durations["characterVideo"],
+                            value = textValues[slot.id].orEmpty(),
+                            enabled = !isBusy,
+                            onValueChange = { textValues[slot.id] = it }
+                        )
+                    } else {
+                        OutlinedTextField(
+                            value = textValues[slot.id].orEmpty(),
+                            onValueChange = { textValues[slot.id] = it },
+                            label = { Text(slot.label) },
+                            placeholder = { Text(slot.placeholder) },
+                            minLines = slot.minLines,
+                            enabled = !isBusy,
+                            isError = spec.kind == WorkflowKind.StoryImages && slot.id == "storyPrompt" && storyPromptLimitExceeded,
+                            supportingText = storySupportingText(spec.kind, slot.id, storyParagraphs, storyPromptLimitExceeded),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+
+                if (spec.kind == WorkflowKind.StoryImages) {
+                    StoryAspectRatioControls(
+                        selected = textValues["aspectRatio"].orEmpty().ifBlank { STORY_ASPECT_RATIOS.first() },
+                        enabled = !isBusy,
+                        onSelected = { textValues["aspectRatio"] = it }
+                    )
+                }
             }
 
             Button(
@@ -395,30 +497,25 @@ fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
                                 clientId = clientId,
                                 onStatus = { status = it },
                                 onFileReceived = { file ->
-                                    val result = OneImageTaskResult(
-                                        label = file.label ?: file.filename,
-                                        url = file.url,
-                                        filename = file.filename,
-                                        size = file.size
-                                    )
-                                    results = mergeResults(results, listOf(result))
+                                    results = mergeResults(results, listOf(LocalTaskResultStore.persistReceivedFile(file)))
                                 }
                             )
                             transport?.close()
                             transport = newTransport
-                            newTransport.setInputFiles(spec.fileSlots.associate { slot -> slot.id to (selectedUris.getValue(slot.id) to fileInfos.getValue(slot.id)) })
+                            newTransport.setInputFiles(activeFileSlots.associate { slot -> slot.id to (selectedUris.getValue(slot.id) to fileInfos.getValue(slot.id)) })
                             if (!newTransport.connect()) error("WebRTC direct transfer did not connect to the local agent.")
                             status = "Creating task..."
-                            val taskId = submitWorkflow(spec, baseUrl, clientId, fileInfos, durations, textValues)
+                            val taskId = submitWorkflow(spec, baseUrl, clientId, activeFileSlots, fileInfos, durations, textValues)
                             status = "Queued"
                             repeat(240) {
                                 val task = OneImageApi.getImageTask(baseUrl, clientId, taskId)
                                 if (task != null) {
-                                    currentTask = task
-                                    status = task.statusDetails ?: task.status
-                                    results = mergeResults(results, task.results)
-                                    if (task.status in setOf("completed", "failed", "cancelled")) {
-                                        if (task.status == "failed") error = task.error ?: "Workflow failed."
+                                    val localTask = LocalTaskResultStore.overlayTask(task)
+                                    currentTask = localTask
+                                    status = localTask.statusDetails ?: localTask.status
+                                    results = mergeResults(results, localTask.results)
+                                    if (localTask.status in setOf("completed", "failed", "cancelled")) {
+                                        if (localTask.status == "failed") error = localTask.error ?: "Workflow failed."
                                         isBusy = false
                                         return@launch
                                     }
@@ -460,11 +557,13 @@ fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
             currentTask?.takeIf { it.status in setOf("pending", "processing", "initializing") }?.let { task ->
                 OutlinedButton(
                     onClick = {
-                        scope.launch {
-                            runCatching { OneImageApi.cancelTask(baseUrl, clientId, task.id) }
-                            transport?.close()
-                            isBusy = false
-                            status = "Cancelled"
+                        cancelAction = {
+                            scope.launch {
+                                runCatching { OneImageApi.cancelTask(baseUrl, clientId, task.id) }
+                                transport?.close()
+                                isBusy = false
+                                status = "Cancelled"
+                            }
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -491,13 +590,7 @@ fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
                             clientId = clientId,
                             onStatus = { status = it },
                             onFileReceived = { file ->
-                                val result = OneImageTaskResult(
-                                    label = file.label ?: file.filename,
-                                    url = file.url,
-                                    filename = file.filename,
-                                    size = file.size
-                                )
-                                results = mergeResults(results, listOf(result))
+                                results = mergeResults(results, listOf(LocalTaskResultStore.persistReceivedFile(file)))
                             }
                         )
                         transport?.close()
@@ -527,11 +620,12 @@ fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
                 currentTaskId = currentTask?.id,
                 taskTitle = { task -> historyTaskTitle(spec, task) },
                 onOpen = { task ->
-                    currentTask = task
-                    results = mergeResults(emptyList(), task.results)
-                    status = task.statusDetails ?: task.status
-                    error = if (task.status == "failed") task.error ?: "Workflow failed." else null
-                    isBusy = task.status in setOf("pending", "processing", "initializing")
+                    val localTask = LocalTaskResultStore.overlayTask(task)
+                    currentTask = localTask
+                    results = mergeResults(emptyList(), localTask.results)
+                    status = localTask.statusDetails ?: localTask.status
+                    error = if (localTask.status == "failed") localTask.error ?: "Workflow failed." else null
+                    isBusy = localTask.status in setOf("pending", "processing", "initializing")
                 },
                 onRestore = { task ->
                     scope.launch {
@@ -541,8 +635,9 @@ fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
                             return@launch
                         }
 
-                        currentTask = task
-                        results = mergeResults(emptyList(), task.results)
+                        val localTask = LocalTaskResultStore.overlayTask(task)
+                        currentTask = localTask
+                        results = mergeResults(emptyList(), localTask.results)
                         error = null
 
                         val openTransport = transport?.takeIf { it.isOpen() } ?: run {
@@ -551,13 +646,7 @@ fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
                                 clientId = clientId,
                                 onStatus = { status = it },
                                 onFileReceived = { file ->
-                                    val result = OneImageTaskResult(
-                                        label = file.label ?: file.filename,
-                                        url = file.url,
-                                        filename = file.filename,
-                                        size = file.size
-                                    )
-                                    results = mergeResults(results, listOf(result))
+                                    results = mergeResults(results, listOf(LocalTaskResultStore.persistReceivedFile(file)))
                                 }
                             )
                             transport?.close()
@@ -583,6 +672,7 @@ fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
                     scope.launch {
                         runCatching { OneImageApi.deleteTask(baseUrl, clientId, task.id) }
                             .onFailure { deleteError -> error = deleteError.message ?: "Could not delete task." }
+                        LocalTaskResultStore.clearTask(task.id)
                         if (currentTask?.id == task.id) {
                             currentTask = null
                             results = emptyList()
@@ -592,10 +682,12 @@ fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
                     }
                 },
                 onCancel = { task ->
-                    scope.launch {
-                        currentTask = task
-                        runCatching { OneImageApi.cancelTask(baseUrl, clientId, task.id) }
-                            .onFailure { cancelError -> error = cancelError.message ?: "Could not cancel task." }
+                    cancelAction = {
+                        scope.launch {
+                            currentTask = LocalTaskResultStore.overlayTask(task)
+                            runCatching { OneImageApi.cancelTask(baseUrl, clientId, task.id) }
+                                .onFailure { cancelError -> error = cancelError.message ?: "Could not cancel task." }
+                        }
                     }
                 }
             )
@@ -644,6 +736,150 @@ private fun FileSlotCard(slot: WorkflowFileSlot, fileInfo: OneImageFileInfo?, du
 }
 
 @Composable
+private fun KeyframesControls(
+    count: Int,
+    fileInfos: Map<String, OneImageFileInfo>,
+    textValues: MutableMap<String, String>,
+    enabled: Boolean,
+    onPick: (WorkflowFileSlot) -> Unit,
+    onAdd: () -> Unit,
+    onRemove: (Int) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Keyframes", fontWeight = FontWeight.Bold)
+                Text("$count / 8 images. Each image can have its own prompt and timing.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            OutlinedButton(onClick = onAdd, enabled = enabled && count < 8, shape = RoundedCornerShape(12.dp)) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Add")
+            }
+        }
+
+        (0 until count).forEach { index ->
+            val slot = keyframeFileSlot(index)
+            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f), tonalElevation = 1.dp) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Keyframe ${index + 1}", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        if (count > 2 && index == count - 1) {
+                            IconButton(onClick = { onRemove(index) }, enabled = enabled) {
+                                Icon(Icons.Default.Delete, contentDescription = "Remove keyframe")
+                            }
+                        }
+                    }
+                    FileSlotCard(slot = slot, fileInfo = fileInfos[slot.id], duration = null, enabled = enabled, onPick = { onPick(slot) })
+                    OutlinedTextField(
+                        value = textValues[keyframePromptId(index)].orEmpty(),
+                        onValueChange = { textValues[keyframePromptId(index)] = it },
+                        label = { Text("Prompt for this keyframe") },
+                        placeholder = { Text("Optional motion or scene note") },
+                        minLines = 2,
+                        enabled = enabled,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (index < count - 1) {
+                        OutlinedTextField(
+                            value = textValues[keyframeDurationId(index)] ?: "25",
+                            onValueChange = { value -> textValues[keyframeDurationId(index)] = value.filter { it.isDigit() }.take(3) },
+                            label = { Text("Duration to next") },
+                            placeholder = { Text("25") },
+                            supportingText = {
+                                val frames = (textValues[keyframeDurationId(index)] ?: "25").toIntOrNull()?.coerceIn(1, 250) ?: 25
+                                Text("$frames frames at 25 fps · ${(frames / 25f).let { String.format("%.1f", it) }}s")
+                            },
+                            enabled = enabled,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StoryAspectRatioControls(selected: String, enabled: Boolean, onSelected: (String) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Aspect Ratio", fontWeight = FontWeight.SemiBold)
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            STORY_ASPECT_RATIOS.chunked(2).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    row.forEach { ratio ->
+                        val active = selected == ratio
+                        OutlinedButton(
+                            onClick = { onSelected(ratio) },
+                            enabled = enabled,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else Color.Transparent
+                            )
+                        ) {
+                            Text(ratio.substringBefore(" "), maxLines = 1)
+                        }
+                    }
+                    if (row.size == 1) Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CharacterDurationControl(
+    sourceDuration: Float?,
+    value: String,
+    enabled: Boolean,
+    onValueChange: (String) -> Unit
+) {
+    val source = sourceDuration?.takeIf { it > 0f } ?: 15f
+    val maxDuration = source.coerceAtMost(15f).coerceAtLeast(0.1f)
+    val selected = (value.toFloatOrNull() ?: maxDuration.coerceAtMost(5f)).coerceIn(0.1f, maxDuration)
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Clip Duration", fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = "Source ${formatSeconds(source)} · max ${formatSeconds(maxDuration)}",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Surface(shape = RoundedCornerShape(999.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)) {
+                Text(
+                    text = formatSeconds(selected),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+        Slider(
+            value = selected,
+            onValueChange = { onValueChange(String.format("%.1f", it.coerceIn(0.1f, maxDuration))) },
+            valueRange = 0.1f..maxDuration,
+            enabled = enabled
+        )
+        OutlinedTextField(
+            value = value.ifBlank { String.format("%.1f", selected) },
+            onValueChange = { raw ->
+                val cleaned = raw.filter { it.isDigit() || it == '.' }.take(5)
+                val parsed = cleaned.toFloatOrNull()
+                onValueChange(if (parsed == null) cleaned else String.format("%.1f", parsed.coerceIn(0.1f, maxDuration)))
+            },
+            label = { Text("Seconds") },
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth(),
+            supportingText = { Text("Only the selected opening part of the source video is used.") }
+        )
+    }
+}
+
+@Composable
 private fun ResultsCard(results: List<OneImageTaskResult>, onRestore: () -> Unit) {
     if (results.isEmpty()) return
     Card(shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
@@ -651,6 +887,7 @@ private fun ResultsCard(results: List<OneImageTaskResult>, onRestore: () -> Unit
             Text("Results", fontWeight = FontWeight.Bold)
             results.forEach { result ->
                 val renderableImage = isRenderableImageResult(result)
+                val renderableVideo = isPlayableVideoResult(result)
                 Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(result.label.ifBlank { result.filename.ifBlank { "Result" } }, fontWeight = FontWeight.SemiBold)
@@ -671,6 +908,21 @@ private fun ResultsCard(results: List<OneImageTaskResult>, onRestore: () -> Unit
                                     contentScale = ContentScale.Fit
                                 )
                             }
+                        } else if (renderableVideo) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(220.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.inverseSurface),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                ResultVideoPreview(
+                                    result = result,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
                         }
                         Text(result.url, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -682,7 +934,12 @@ private fun ResultsCard(results: List<OneImageTaskResult>, onRestore: () -> Unit
                                 }
                             } else {
                                 Text(
-                                    text = if (renderableImage) "Shown below" else "Saved on device",
+                                    text = when {
+                                        renderableImage -> "Shown below"
+                                        renderableVideo && (result.url.startsWith("file:") || result.url.startsWith("content:")) -> "Available locally"
+                                        renderableVideo -> "Preview available"
+                                        else -> "Saved on device"
+                                    },
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -699,6 +956,7 @@ private suspend fun submitWorkflow(
     spec: WorkflowSpec,
     baseUrl: String,
     clientId: String,
+    activeFileSlots: List<WorkflowFileSlot>,
     files: Map<String, OneImageFileInfo>,
     durations: Map<String, Float>,
     text: Map<String, String>
@@ -708,29 +966,65 @@ private suspend fun submitWorkflow(
         val duration = text["duration"]?.toFloatOrNull()?.coerceIn(0.1f, sourceDuration.coerceAtMost(15f)) ?: sourceDuration.coerceAtMost(5f)
         OneImageApi.submitCharacterReplacementWorkflow(baseUrl, clientId, text["prompt"].orEmpty(), files.getValue("characterVideo"), files.getValue("characterImage"), duration, sourceDuration)
     }
-    WorkflowKind.StoryImages -> OneImageApi.submitQwenStoryImagesWorkflow(baseUrl, clientId, files.getValue("qwenImage"), text["storyPrompt"].orEmpty(), text["stylePrompt"].orEmpty())
+    WorkflowKind.StoryImages -> OneImageApi.submitQwenStoryImagesWorkflow(baseUrl, clientId, files.getValue("qwenImage"), text["storyPrompt"].orEmpty(), text["stylePrompt"].orEmpty(), text["aspectRatio"].orEmpty().ifBlank { STORY_ASPECT_RATIOS.first() })
     WorkflowKind.MeshModel -> OneImageApi.submitMeshModelWorkflow(baseUrl, clientId, files.getValue("meshImage"))
     WorkflowKind.GameAssetUpscaler -> OneImageApi.submitGameAssetUpscalerWorkflow(baseUrl, clientId, files.getValue("upscalerImage"), text["description"].orEmpty(), text["importantDescription"].orEmpty(), text["negativePrompt"].orEmpty())
     WorkflowKind.VideoDescription -> OneImageApi.submitVideoDescriptionWorkflow(baseUrl, clientId, files.getValue("inputVideo"), durations["inputVideo"]?.takeIf { it > 0f } ?: 1f)
     WorkflowKind.Keyframes -> OneImageApi.submitKeyframesWorkflow(
         baseUrl,
         clientId,
-        listOf(
-            KeyframeWorkflowInput(files.getValue("image_0"), text["prompt"].orEmpty(), text["durationFrames"]?.toIntOrNull()?.coerceIn(1, 250) ?: 25),
-            KeyframeWorkflowInput(files.getValue("image_1"), "", text["durationFrames"]?.toIntOrNull()?.coerceIn(1, 250) ?: 25)
-        )
+        activeFileSlots.mapIndexed { index, slot ->
+            KeyframeWorkflowInput(
+                files.getValue(slot.id),
+                text[keyframePromptId(index)].orEmpty(),
+                if (index < activeFileSlots.lastIndex) text[keyframeDurationId(index)]?.toIntOrNull()?.coerceIn(1, 250) ?: 25 else 25
+            )
+        }
     )
 }
+
+private fun keyframeFileSlot(index: Int) = WorkflowFileSlot("image_$index", "Image ${index + 1}", "image/*", "Choose keyframe ${index + 1}.")
+private fun keyframePromptId(index: Int) = "keyframe_prompt_$index"
+private fun keyframeDurationId(index: Int) = "keyframe_duration_$index"
+
+private fun storyParagraphs(value: String): List<String> = value
+    .split(Regex("\\n\\s*\\n"))
+    .map { it.trim() }
+    .filter { it.isNotEmpty() }
+
+private fun storySupportingText(kind: WorkflowKind, slotId: String, paragraphs: List<String>, limitExceeded: Boolean): (@Composable () -> Unit)? {
+    if (kind != WorkflowKind.StoryImages || slotId != "storyPrompt") return null
+    return {
+        val longest = paragraphs.maxOfOrNull { it.length } ?: 0
+        val message = "${paragraphs.size} image${if (paragraphs.size == 1) "" else "s"} planned · longest paragraph $longest/$STORY_PARAGRAPH_LIMIT"
+        Text(if (limitExceeded) "$message · shorten long paragraphs" else message)
+    }
+}
+
+private fun formatSeconds(value: Float): String = "${String.format("%.1f", value)}s"
 
 private fun mergeResults(current: List<OneImageTaskResult>, incoming: List<OneImageTaskResult>): List<OneImageTaskResult> {
     val merged = current.toMutableList()
     incoming.forEach { result ->
         val key = result.filename.ifBlank { result.url.removePrefix("webrtc://") }
         val index = merged.indexOfFirst { existing -> existing.filename == key || existing.filename == result.filename || existing.label == result.label }
-        if (index >= 0) merged[index] = result.copy(label = merged[index].label.ifBlank { result.label }) else merged += result
+        if (index >= 0) {
+            val existing = merged[index]
+            val preferred = if (existing.isDirectResult() && result.url.startsWith("webrtc://")) existing else result
+            merged[index] = preferred.copy(
+                label = existing.label.ifBlank { preferred.label },
+                filename = preferred.filename.ifBlank { existing.filename },
+                size = preferred.size.takeIf { it > 0L } ?: existing.size
+            )
+        } else {
+            merged += result
+        }
     }
     return merged
 }
+
+private fun OneImageTaskResult.isDirectResult(): Boolean =
+    url.isNotBlank() && !url.startsWith("webrtc://")
 
 private fun progressFraction(task: OneImageTask): Float {
     val max = task.progressMax.takeIf { it > 0 } ?: 100
@@ -772,7 +1066,8 @@ private fun workflowTaskFromDocument(document: DocumentSnapshot): OneImageTask? 
     }.orEmpty()
     val params = data["params"] as? Map<*, *>
 
-    return OneImageTask(
+    return LocalTaskResultStore.overlayTask(
+        OneImageTask(
         id = document.id,
         type = data["type"]?.toString().orEmpty(),
         status = data["status"]?.toString().orEmpty().ifBlank { "pending" },
@@ -787,6 +1082,7 @@ private fun workflowTaskFromDocument(document: DocumentSnapshot): OneImageTask? 
         useWebRTC = data["useWebRTC"] as? Boolean ?: false,
         resultRestoreUnavailable = data["resultRestoreUnavailable"] as? Boolean ?: false,
         results = results
+    )
     )
 }
 

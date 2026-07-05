@@ -60,6 +60,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -73,6 +74,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.oneimage.android.api.OneImageTask
 import com.oneimage.android.api.OneImageTaskResult
+import com.oneimage.android.ui.shared.CancelTaskConfirmationDialog
 import com.oneimage.android.ui.shared.WorkflowHistoryList
 
 private val ExpectedAngles = listOf(
@@ -102,12 +104,23 @@ fun ImageGenScreen(
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) viewModel.selectImage(context, uri)
     }
+    var cancelAction by remember { androidx.compose.runtime.mutableStateOf<(() -> Unit)?>(null) }
     val canGenerate = state.sourceImageUri != null &&
         state.transferImageUri != null &&
         state.prompt.isNotBlank() &&
         !state.isBusy &&
         state.engineReady &&
         state.hasEnoughCredits
+
+    CancelTaskConfirmationDialog(
+        visible = cancelAction != null,
+        onDismiss = { cancelAction = null },
+        onConfirm = {
+            val action = cancelAction
+            cancelAction = null
+            action?.invoke()
+        }
+    )
 
     Scaffold(
         topBar = {
@@ -180,7 +193,7 @@ fun ImageGenScreen(
 
             if (state.currentTaskId != null && state.phase == ImageGenPhase.Running) {
                 OutlinedButton(
-                    onClick = { viewModel.cancelCurrentTask(clientId) },
+                    onClick = { cancelAction = { viewModel.cancelCurrentTask(clientId) } },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp)
                 ) {
@@ -210,8 +223,10 @@ fun ImageGenScreen(
                 onRestore = { task -> viewModel.restoreTask(context, clientId, task) },
                 onDelete = { task -> viewModel.deleteTask(clientId, task) },
                 onCancel = { task ->
-                    viewModel.loadTask(task)
-                    viewModel.cancelCurrentTask(clientId)
+                    cancelAction = {
+                        viewModel.loadTask(task)
+                        viewModel.cancelCurrentTask(clientId)
+                    }
                 }
             )
         }

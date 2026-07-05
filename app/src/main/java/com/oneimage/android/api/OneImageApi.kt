@@ -289,7 +289,8 @@ object OneImageApi {
         clientId: String,
         imageFileInfo: OneImageFileInfo,
         storyPrompt: String,
-        stylePrompt: String
+        stylePrompt: String,
+        aspectRatio: String = "16:9 (Widescreen)"
     ): String = postGeneration(
         baseUrl = baseUrl,
         path = "/api/qwen-story-images/generate",
@@ -297,6 +298,7 @@ object OneImageApi {
             .put("clientId", clientId)
             .put("storyPrompt", storyPrompt)
             .put("stylePrompt", stylePrompt)
+            .put("aspectRatio", aspectRatio)
             .put("seed", 0)
             .put("inputImageName", imageFileInfo.filename)
             .put("inputImageMimetype", imageFileInfo.mimeType)
@@ -469,7 +471,8 @@ object OneImageApi {
             json.has("createdAt") -> json.optLong("createdAt", 0L)
             else -> 0L
         }
-        return OneImageTask(
+        return LocalTaskResultStore.overlayTask(
+            OneImageTask(
             id = json.optString("id"),
             type = json.optString("type", "image"),
             status = json.optString("status"),
@@ -484,6 +487,7 @@ object OneImageApi {
             useWebRTC = json.optBoolean("useWebRTC", false),
             resultRestoreUnavailable = json.optBoolean("resultRestoreUnavailable", false),
             results = results
+        )
         )
     }
 

@@ -1,9 +1,11 @@
 package com.oneimage.android.ui.lipsync
 
+import android.media.MediaPlayer
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,7 +24,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -36,17 +43,23 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -57,7 +70,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.oneimage.android.api.OneImageTask
 import com.oneimage.android.api.OneImageTaskResult
+import com.oneimage.android.ui.shared.ResultVideoPreview
 import com.oneimage.android.ui.shared.WorkflowHistoryList
+import com.oneimage.android.ui.shared.CancelTaskConfirmationDialog
+import com.oneimage.android.ui.shared.isPlayableVideoResult
+import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,6 +96,17 @@ fun LipSyncScreen(
     val audioPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) viewModel.selectAudio(context, uri)
     }
+    var cancelAction by remember { androidx.compose.runtime.mutableStateOf<(() -> Unit)?>(null) }
+
+    CancelTaskConfirmationDialog(
+        visible = cancelAction != null,
+        onDismiss = { cancelAction = null },
+        onConfirm = {
+            val action = cancelAction
+            cancelAction = null
+            action?.invoke()
+        }
+    )
 
     val canGenerate = state.sourceImageUri != null &&
         state.transferImageUri != null &&
@@ -151,37 +180,12 @@ fun LipSyncScreen(
                 }
             }
 
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Speech audio", fontWeight = FontWeight.SemiBold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                                Icon(Icons.Default.Audiotrack, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
-                            }
-                        }
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(state.audioFileInfo?.filename ?: "No audio selected")
-                            Text(
-                                text = if (state.audioDurationSeconds > 0f) "${state.audioDurationSeconds.toInt()}s audio" else "Choose an MP3 or WAV file",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    Button(onClick = { audioPicker.launch("audio/*") }) {
-                        Text("Pick audio")
-                    }
-                }
-            }
+            AudioSetupPanel(
+                state = state,
+                onPickAudio = { audioPicker.launch("audio/mpeg") },
+                onStartChange = viewModel::updateAudioStart,
+                onDurationChange = viewModel::updateDuration
+            )
 
             Card(
                 shape = RoundedCornerShape(20.dp),
@@ -197,27 +201,6 @@ fun LipSyncScreen(
                         placeholder = { Text("Describe the performance or style") },
                         minLines = 3,
                         maxLines = 4
-                    )
-
-                    Text("Timing", fontWeight = FontWeight.SemiBold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedTextField(
-                            value = state.audioStartSeconds.toString(),
-                            onValueChange = { viewModel.updateAudioStart(it) },
-                            label = { Text("Start (s)") },
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = state.durationSeconds.toString(),
-                            onValueChange = { viewModel.updateDuration(it) },
-                            label = { Text("Duration (s)") },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    Text(
-                        text = if (state.audioTimingValid) "Segment looks valid for the selected audio." else "Choose a start and duration that fit inside the audio clip.",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -245,7 +228,7 @@ fun LipSyncScreen(
 
             if (state.currentTaskId != null && state.phase == LipSyncPhase.Running) {
                 OutlinedButton(
-                    onClick = { viewModel.cancelCurrentTask(clientId) },
+                    onClick = { cancelAction = { viewModel.cancelCurrentTask(clientId) } },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp)
                 ) {
@@ -272,8 +255,10 @@ fun LipSyncScreen(
                 onRestore = { task -> viewModel.restoreTask(context, clientId, task) },
                 onDelete = { task -> viewModel.deleteTask(clientId, task) },
                 onCancel = { task ->
-                    viewModel.loadTask(task)
-                    viewModel.cancelCurrentTask(clientId)
+                    cancelAction = {
+                        viewModel.loadTask(task)
+                        viewModel.cancelCurrentTask(clientId)
+                    }
                 }
             )
         }
@@ -304,6 +289,225 @@ private fun StatusChip(label: String, positive: Boolean, modifier: Modifier = Mo
 }
 
 @Composable
+private fun AudioSetupPanel(
+    state: LipSyncUiState,
+    onPickAudio: () -> Unit,
+    onStartChange: (String) -> Unit,
+    onDurationChange: (String) -> Unit
+) {
+    val context = LocalContext.current
+    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+    var currentTime by remember(state.audioUri) { mutableStateOf(0f) }
+    var isPlaying by remember(state.audioUri) { mutableStateOf(false) }
+    var isSegmentPreview by remember(state.audioUri) { mutableStateOf(false) }
+
+    val audioDuration = state.audioDurationSeconds.coerceAtLeast(0f)
+    val segmentStart = state.audioStartSeconds.coerceIn(0f, (audioDuration - 0.1f).coerceAtLeast(0f))
+    val segmentEnd = (segmentStart + state.durationSeconds).coerceAtMost(audioDuration).coerceAtLeast(segmentStart)
+
+    DisposableEffect(state.audioUri) {
+        val uri = state.audioUri
+        currentTime = 0f
+        isPlaying = false
+        isSegmentPreview = false
+
+        val nextPlayer = uri?.let {
+            runCatching {
+                MediaPlayer.create(context, it)?.apply {
+                    setOnCompletionListener {
+                        isPlaying = false
+                        isSegmentPreview = false
+                        currentTime = 0f
+                    }
+                }
+            }.getOrNull()
+        }
+        mediaPlayer = nextPlayer
+
+        onDispose {
+            nextPlayer?.release()
+            if (mediaPlayer === nextPlayer) mediaPlayer = null
+        }
+    }
+
+    LaunchedEffect(mediaPlayer, isPlaying, isSegmentPreview, segmentEnd) {
+        while (isPlaying) {
+            val player = mediaPlayer
+            val nextTime = runCatching { (player?.currentPosition ?: 0) / 1000f }.getOrDefault(currentTime)
+            currentTime = nextTime.coerceIn(0f, audioDuration.coerceAtLeast(0.1f))
+            if (isSegmentPreview && currentTime >= segmentEnd) {
+                runCatching {
+                    player?.pause()
+                    player?.seekTo((segmentEnd * 1000).roundToInt())
+                }
+                currentTime = segmentEnd
+                isPlaying = false
+                isSegmentPreview = false
+            }
+            delay(100)
+        }
+    }
+
+    fun seekTo(seconds: Float) {
+        val clamped = seconds.coerceIn(0f, audioDuration.coerceAtLeast(0.1f))
+        currentTime = clamped
+        runCatching { mediaPlayer?.seekTo((clamped * 1000).roundToInt()) }
+    }
+
+    fun togglePlayback() {
+        val player = mediaPlayer ?: return
+        if (isPlaying) {
+            runCatching { player.pause() }
+            isPlaying = false
+            isSegmentPreview = false
+        } else {
+            runCatching { player.start() }
+            isPlaying = true
+            isSegmentPreview = false
+        }
+    }
+
+    fun previewSegment() {
+        val player = mediaPlayer ?: return
+        seekTo(segmentStart)
+        runCatching { player.start() }
+        isPlaying = true
+        isSegmentPreview = true
+    }
+
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Voice track", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                OutlinedButton(onClick = onPickAudio, shape = RoundedCornerShape(8.dp)) {
+                    Icon(Icons.Default.Audiotrack, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(if (state.audioUri == null) "Pick MP3" else "Replace")
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Icon(Icons.Default.Audiotrack, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        state.audioFileInfo?.filename ?: "No audio selected",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = if (audioDuration > 0f) {
+                            "${formatSeconds(audioDuration)} · ${formatSeconds(segmentStart)}-${formatSeconds(segmentEnd)}"
+                        } else {
+                            "MP3 only"
+                        },
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            if (state.audioUri != null && audioDuration > 0f) {
+                Slider(
+                    value = currentTime.coerceIn(0f, audioDuration),
+                    onValueChange = { seekTo(it) },
+                    valueRange = 0f..audioDuration,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(formatSeconds(currentTime), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.weight(1f))
+                    Text(
+                        "${formatSeconds(segmentStart)} - ${formatSeconds(segmentEnd)}",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (state.audioTimingValid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(onClick = ::togglePlayback, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)) {
+                        Icon(
+                            if (isPlaying && !isSegmentPreview) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(if (isPlaying && !isSegmentPreview) "Pause" else "Play")
+                    }
+                    OutlinedButton(onClick = ::previewSegment, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)) {
+                        Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Slice")
+                    }
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = { onStartChange(roundToTenth(currentTime).toString()) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Start")
+                    }
+                    OutlinedButton(
+                        onClick = { onDurationChange(roundToTenth(currentTime - state.audioStartSeconds).coerceAtLeast(0.1f).toString()) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.Flag, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("End")
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            seekTo(0f)
+                            onStartChange("0")
+                            onDurationChange(minOf(10f, audioDuration).toString())
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Reset timing", modifier = Modifier.size(16.dp))
+                    }
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = trimFloat(state.audioStartSeconds),
+                        onValueChange = onStartChange,
+                        label = { Text("Start") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = trimFloat(state.durationSeconds),
+                        onValueChange = onDurationChange,
+                        label = { Text("Duration") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun OutputManifest(state: LipSyncUiState, onSave: (OneImageTaskResult) -> Unit) {
     if (state.results.isEmpty()) return
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -312,9 +516,33 @@ private fun OutputManifest(state: LipSyncUiState, onSave: (OneImageTaskResult) -
             Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(result.label.ifBlank { result.filename.ifBlank { "Result" } }, fontWeight = FontWeight.SemiBold)
+                    if (isPlayableVideoResult(result)) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(220.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.inverseSurface)
+                        ) {
+                            ResultVideoPreview(result = result, modifier = Modifier.fillMaxSize())
+                        }
+                    }
                     Text(result.url, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    TextButton(onClick = { onSave(result) }) {
-                        Text("Save")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (isPlayableVideoResult(result)) {
+                            Text(
+                                text = if (result.url.startsWith("file:") || result.url.startsWith("content:")) "Available locally" else "Streaming result",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f).align(Alignment.CenterVertically)
+                            )
+                        } else {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                        TextButton(onClick = { onSave(result) }) {
+                            Text("Save")
+                        }
                     }
                 }
             }
@@ -322,3 +550,18 @@ private fun OutputManifest(state: LipSyncUiState, onSave: (OneImageTaskResult) -
     }
 }
 
+private fun formatSeconds(value: Float): String {
+    val safe = value.coerceAtLeast(0f)
+    val minutes = (safe / 60f).toInt()
+    val seconds = safe - (minutes * 60)
+    return "$minutes:${seconds.toStringWithOneDecimal().padStart(4, '0')}"
+}
+
+private fun roundToTenth(value: Float): Float = (value * 10f).roundToInt() / 10f
+
+private fun trimFloat(value: Float): String {
+    val rounded = roundToTenth(value)
+    return if (rounded % 1f == 0f) rounded.toInt().toString() else rounded.toString()
+}
+
+private fun Float.toStringWithOneDecimal(): String = String.format(java.util.Locale.US, "%.1f", this)
