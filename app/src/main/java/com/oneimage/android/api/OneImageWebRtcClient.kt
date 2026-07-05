@@ -23,6 +23,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.security.MessageDigest
 import java.util.UUID
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -247,10 +248,16 @@ class OneImageWebRtcClient(
                     size = wireSize,
                     originalSize = json.optLong("originalSize", wireSize),
                     taskId = json.optString("taskId").ifBlank { null },
-                    label = json.optString("label").ifBlank { null }
+                    label = json.optString("label").ifBlank { null },
+                    checksum = json.optString("checksum").ifBlank { null }
                 )
             }
-            "file_end" -> finalizeIncomingFile(json.optString("fileId"))
+            "file_end" -> {
+                val fileId = json.optString("fileId")
+                val incoming = incomingFiles[fileId] ?: return
+                incoming.endReceived = true
+                finalizeIncomingFile(fileId)
+            }
             "file_nack" -> onStatus(json.optString("message", "File transfer was rejected"))
             "task_results_complete" -> onStatus("Restored ${json.optInt("count", 0)} result file(s)")
             "task_results_unavailable" -> onStatus(json.optString("message", "Stored results are unavailable"))
@@ -301,20 +308,72 @@ class OneImageWebRtcClient(
 
     private fun handleIncomingBinary(bytes: ByteArray) {
         val framed = parseFramedBinary(bytes)
+        if (framed?.error != null) {
+            onStatus(framed.error)
+            return
+        }
         val fileId = framed?.fileId ?: incomingFiles.keys.lastOrNull() ?: return
         val file = incomingFiles[fileId] ?: return
-        file.bytes.write(framed?.chunk ?: bytes)
-        if (file.bytes.size().toLong() >= file.size) {
+
+        val chunk = framed?.chunk ?: bytes
+        val offset = framed?.offset
+        val received = file.bytes.size()
+
+        if (offset != null) {
+            if (offset < received && offset + chunk.size <= received) return
+            if (offset != received) {
+                onStatus("Restore failed for ${file.filename}: chunk order was invalid")
+                incomingFiles.remove(fileId)
+                return
+            }
+        }
+
+        val remaining = (file.size - received).coerceAtLeast(0L).toInt()
+        if (remaining <= 0) {
+            if (file.endReceived) finalizeIncomingFile(fileId)
+            return
+        }
+
+        val acceptedChunk = if (chunk.size > remaining) chunk.copyOf(remaining) else chunk
+        file.bytes.write(acceptedChunk)
+        if (file.endReceived || file.bytes.size().toLong() >= file.size) {
             finalizeIncomingFile(fileId)
         }
     }
 
     private fun finalizeIncomingFile(fileId: String) {
         val incoming = incomingFiles.remove(fileId) ?: return
+        val wireBytes = incoming.bytes.toByteArray()
+        if (wireBytes.size.toLong() < incoming.size) {
+            incomingFiles[fileId] = incoming
+            return
+        }
+
+        val expectedWireSize = incoming.size.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        val trimmedWireBytes = if (wireBytes.size > expectedWireSize) {
+            wireBytes.copyOf(expectedWireSize)
+        } else {
+            wireBytes
+        }
+        val expectedOriginalSize = incoming.originalSize
+            .coerceAtLeast(0L)
+            .coerceAtMost(trimmedWireBytes.size.toLong())
+            .toInt()
+        val fileBytes = if (expectedOriginalSize in 1 until trimmedWireBytes.size) {
+            trimmedWireBytes.copyOf(expectedOriginalSize)
+        } else {
+            trimmedWireBytes
+        }
+        val actualChecksum = incoming.checksum?.let { sha256(fileBytes) }
+        if (incoming.checksum != null && actualChecksum != null && !incoming.checksum.equals(actualChecksum, ignoreCase = true)) {
+            onStatus("Restore failed for ${incoming.filename}: checksum mismatch")
+            return
+        }
+
         val safeName = incoming.filename.replace(Regex("[^A-Za-z0-9._-]"), "_")
         val directory = File(context.cacheDir, "oneimage-results").apply { mkdirs() }
         val file = File(directory, "${incoming.fileId}-$safeName")
-        file.writeBytes(incoming.bytes.toByteArray())
+        file.writeBytes(fileBytes)
         
         dataChannel?.let { channel ->
             sendJson(
@@ -323,8 +382,8 @@ class OneImageWebRtcClient(
                     .put("type", "file_ack")
                     .put("fileId", incoming.fileId)
                     .put("filename", incoming.filename)
-                    .put("size", file.length())
-                    .put("wireSize", file.length())
+                    .put("size", fileBytes.size)
+                    .put("wireSize", trimmedWireBytes.size)
             )
         }
         onFileReceived(
@@ -352,7 +411,14 @@ class OneImageWebRtcClient(
         val chunkSize = view.getInt(9)
         val fileId = bytes.copyOfRange(FRAMED_BINARY_MIN_HEADER_BYTES, headerLength).toString(Charsets.UTF_8)
         val chunk = bytes.copyOfRange(headerLength, bytes.size)
-        if (chunk.size != chunkSize) return null
+        if (chunk.size != chunkSize) {
+            return FramedChunk(
+                fileId = fileId,
+                offset = offset,
+                chunk = chunk,
+                error = "Restore failed for $fileId: invalid chunk size ${chunk.size}/$chunkSize"
+            )
+        }
         return FramedChunk(fileId = fileId, offset = offset, chunk = chunk)
     }
 
@@ -364,10 +430,17 @@ class OneImageWebRtcClient(
         val originalSize: Long,
         val taskId: String?,
         val label: String?,
+        val checksum: String?,
+        var endReceived: Boolean = false,
         val bytes: ByteArrayOutputStream = ByteArrayOutputStream()
     )
 
-    private data class FramedChunk(val fileId: String, val offset: Int, val chunk: ByteArray) {
+    private data class FramedChunk(
+        val fileId: String,
+        val offset: Int,
+        val chunk: ByteArray,
+        val error: String? = null
+    ) {
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
             if (javaClass != other?.javaClass) return false
@@ -388,6 +461,11 @@ class OneImageWebRtcClient(
             return result
         }
     }
+
+    private fun sha256(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(bytes)
+            .joinToString("") { "%02x".format(it) }
 
     private class LoggingSdpObserver(private val label: String) : SdpObserver {
         override fun onCreateSuccess(description: SessionDescription?) = Unit

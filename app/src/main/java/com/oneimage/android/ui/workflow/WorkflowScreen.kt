@@ -661,14 +661,14 @@ private fun ResultsCard(results: List<OneImageTaskResult>, onRestore: () -> Unit
                                     .height(220.dp)
                                     .clip(RoundedCornerShape(8.dp))
                                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
-                                    .background(MaterialTheme.colorScheme.surface),
+                                    .background(MaterialTheme.colorScheme.inverseSurface),
                                 contentAlignment = Alignment.Center
                             ) {
                                 AsyncImage(
                                     model = result.url,
                                     contentDescription = result.label.ifBlank { result.filename.ifBlank { "Result image" } },
                                     modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
+                                    contentScale = ContentScale.Fit
                                 )
                             }
                         }
