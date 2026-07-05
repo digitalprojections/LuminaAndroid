@@ -71,7 +71,7 @@ fun BillingScreen(
                     textAlign = TextAlign.Center
                 )
                 Text(
-                    text = "Manage your OneImage account",
+                    text = "Manage your creator account",
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp)
@@ -134,7 +134,7 @@ fun BillingScreen(
                             "Unlimited generation access",
                             "Comped account status",
                             "No credit deduction for tasks",
-                            "Full OneImage backend access"
+                            "Full service access"
                         ),
                         isCurrent = true,
                         highlight = true
@@ -148,7 +148,7 @@ fun BillingScreen(
                     price = "$12.00",
                     period = "/mo",
                     features = listOf(
-                        "Unlimited HD AI Generations",
+                        "Unlimited HD creations",
                         "Priority RTC Channel Access",
                         "Advanced Style Controls",
                         "Zero Ads Experience"
@@ -279,3 +279,5 @@ fun SubscriptionCard(
         }
     }
 }
+
+

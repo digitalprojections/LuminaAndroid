@@ -1,4 +1,4 @@
-package com.oneimage.android.ui.videogen
+package com.oneimage.android.ui.meshmodel
 
 import android.content.ContentValues
 import android.content.Context
@@ -40,9 +40,9 @@ import kotlin.math.roundToInt
 
 private const val TASK_HISTORY_LIMIT = 250L
 private const val ENGINE_STATUS_STALE_MS = 90_000L
-private const val VIDEO_CREDITS_PER_SECOND = 4
+private const val ESTIMATED_CREDITS = 50
 
-enum class VideoGenPhase {
+enum class MeshModelPhase {
     Idle,
     Preparing,
     Connecting,
@@ -54,18 +54,11 @@ enum class VideoGenPhase {
     Error
 }
 
-data class VideoGenUiState(
-    val startSourceImageUri: Uri? = null,
-    val startTransferImageUri: Uri? = null,
-    val startTransferFileInfo: OneImageFileInfo? = null,
-    val endSourceImageUri: Uri? = null,
-    val endTransferImageUri: Uri? = null,
-    val endTransferFileInfo: OneImageFileInfo? = null,
-    val duration: Int = 6,
-    val frameRate: Int = 25,
-    val prompt: String = "",
-    val isLightning: Boolean = true,
-    val phase: VideoGenPhase = VideoGenPhase.Idle,
+data class MeshModelUiState(
+    val sourceImageUri: Uri? = null,
+    val transferImageUri: Uri? = null,
+    val transferFileInfo: OneImageFileInfo? = null,
+    val phase: MeshModelPhase = MeshModelPhase.Idle,
     val statusMessage: String = "Ready",
     val error: String? = null,
     val saveMessage: String? = null,
@@ -78,26 +71,26 @@ data class VideoGenUiState(
     val queueStatus: OneImageQueueStatus? = null
 ) {
     val isBusy: Boolean
-        get() = phase == VideoGenPhase.Preparing ||
-            phase == VideoGenPhase.Connecting ||
-            phase == VideoGenPhase.Submitting ||
-            phase == VideoGenPhase.Running ||
-            phase == VideoGenPhase.Restoring
+        get() = phase == MeshModelPhase.Preparing ||
+            phase == MeshModelPhase.Connecting ||
+            phase == MeshModelPhase.Submitting ||
+            phase == MeshModelPhase.Running ||
+            phase == MeshModelPhase.Restoring
 
     val estimatedCredits: Int
-        get() = duration.coerceAtLeast(1) * VIDEO_CREDITS_PER_SECOND
+        get() = ESTIMATED_CREDITS
 
     val hasEnoughCredits: Boolean
         get() = profile?.hasEnoughCredits(estimatedCredits) == true
 }
 
-class VideoGenViewModel : ViewModel() {
+class MeshModelViewModel : ViewModel() {
     private val auth = FirebaseAuth.getInstance()
     private val firestore = FirebaseFirestore.getInstance()
     private val baseUrl = BuildConfig.ONEIMAGE_API_BASE_URL.ifBlank { "https://genstudio.web.app/" }
 
-    private val _uiState = kotlinx.coroutines.flow.MutableStateFlow(VideoGenUiState())
-    val uiState: kotlinx.coroutines.flow.StateFlow<VideoGenUiState> = _uiState
+    private val _uiState = kotlinx.coroutines.flow.MutableStateFlow(MeshModelUiState())
+    val uiState: kotlinx.coroutines.flow.StateFlow<MeshModelUiState> = _uiState
 
     private var webRtcClient: OneImageWebRtcClient? = null
     private var generationJob: Job? = null
@@ -129,96 +122,50 @@ class VideoGenViewModel : ViewModel() {
         auth.addAuthStateListener(authListener!!)
     }
 
-    fun selectImage(context: Context, uri: Uri, isStart: Boolean) {
+    fun selectImage(context: Context, uri: Uri) {
         val appContext = context.applicationContext
         viewModelScope.launch {
-            _uiState.value = if (isStart) {
-                _uiState.value.copy(
-                    startSourceImageUri = uri,
-                    startTransferImageUri = null,
-                    startTransferFileInfo = null,
-                    results = emptyList(),
-                    currentTask = null,
-                    currentTaskId = null,
-                    error = null,
-                    saveMessage = null,
-                    phase = VideoGenPhase.Preparing,
-                    statusMessage = "Preparing start frame..."
-                )
-            } else {
-                _uiState.value.copy(
-                    endSourceImageUri = uri,
-                    endTransferImageUri = null,
-                    endTransferFileInfo = null,
-                    results = emptyList(),
-                    currentTask = null,
-                    currentTaskId = null,
-                    error = null,
-                    saveMessage = null,
-                    phase = VideoGenPhase.Preparing,
-                    statusMessage = "Preparing end frame..."
-                )
-            }
+            _uiState.value = _uiState.value.copy(
+                sourceImageUri = uri,
+                transferImageUri = null,
+                transferFileInfo = null,
+                results = emptyList(),
+                currentTask = null,
+                currentTaskId = null,
+                error = null,
+                saveMessage = null,
+                phase = MeshModelPhase.Preparing,
+                statusMessage = "Preparing asset image..."
+            )
             try {
-                val prepared = prepareImageForOneImage(appContext, uri)
-                _uiState.value = if (isStart) {
-                    _uiState.value.copy(
-                        startTransferImageUri = prepared.uri,
-                        startTransferFileInfo = prepared.fileInfo,
-                        phase = VideoGenPhase.Idle,
-                        statusMessage = "Ready"
-                    )
-                } else {
-                    _uiState.value.copy(
-                        endTransferImageUri = prepared.uri,
-                        endTransferFileInfo = prepared.fileInfo,
-                        phase = VideoGenPhase.Idle,
-                        statusMessage = "Ready"
-                    )
-                }
-            } catch (e: Exception) {
+                val prepared = prepareImageForMesh(appContext, uri)
+                _uiState.value = _uiState.value.copy(
+                    transferImageUri = prepared.uri,
+                    transferFileInfo = prepared.fileInfo,
+                    phase = MeshModelPhase.Idle,
+                    statusMessage = "Ready"
+                )
+            } catch (error: Exception) {
                 val fallbackInfo = OneImageApi.getFileInfo(appContext.contentResolver, uri)
-                _uiState.value = if (isStart) {
-                    _uiState.value.copy(
-                        startTransferImageUri = uri,
-                        startTransferFileInfo = fallbackInfo,
-                        phase = VideoGenPhase.Error,
-                        error = e.message ?: "Could not prepare the start image.",
-                        statusMessage = "Image preparation failed"
-                    )
-                } else {
-                    _uiState.value.copy(
-                        endTransferImageUri = uri,
-                        endTransferFileInfo = fallbackInfo,
-                        phase = VideoGenPhase.Error,
-                        error = e.message ?: "Could not prepare the end image.",
-                        statusMessage = "Image preparation failed"
-                    )
-                }
+                _uiState.value = _uiState.value.copy(
+                    transferImageUri = uri,
+                    transferFileInfo = fallbackInfo,
+                    phase = MeshModelPhase.Error,
+                    error = error.message ?: "Could not prepare the image.",
+                    statusMessage = "Image preparation failed"
+                )
             }
         }
-    }
-
-    fun updatePrompt(prompt: String) {
-        _uiState.value = _uiState.value.copy(prompt = prompt, saveMessage = null)
-    }
-
-    fun setHighQuality(enabled: Boolean) {
-        if (_uiState.value.isBusy) return
-        _uiState.value = _uiState.value.copy(isLightning = !enabled)
     }
 
     fun clearSource() {
         generationJob?.cancel()
         webRtcClient?.close()
         _uiState.value = _uiState.value.copy(
-            startSourceImageUri = null,
-            startTransferImageUri = null,
-            startTransferFileInfo = null,
-            endSourceImageUri = null,
-            endTransferImageUri = null,
-            endTransferFileInfo = null,
-            phase = VideoGenPhase.Idle,
+            sourceImageUri = null,
+            transferImageUri = null,
+            transferFileInfo = null,
+            phase = MeshModelPhase.Idle,
             statusMessage = "Ready",
             error = null,
             saveMessage = null,
@@ -228,90 +175,76 @@ class VideoGenViewModel : ViewModel() {
         )
     }
 
-    fun generateVideo(context: Context, fallbackClientId: String) {
+    fun generateMesh(context: Context, fallbackClientId: String) {
         val appContext = context.applicationContext
         val initial = _uiState.value
-        val startTransferUri = initial.startTransferImageUri
-        val startFileInfo = initial.startTransferFileInfo
-        val endTransferUri = initial.endTransferImageUri
-        val endFileInfo = initial.endTransferFileInfo
-        val prompt = initial.prompt.trim()
+        val transferUri = initial.transferImageUri
+        val fileInfo = initial.transferFileInfo
 
-        if (startTransferUri == null || startFileInfo == null || endTransferUri == null || endFileInfo == null) {
-            _uiState.value = initial.copy(phase = VideoGenPhase.Error, error = "Choose both start and end images first.")
-            return
-        }
-        if (prompt.isBlank()) {
-            _uiState.value = initial.copy(phase = VideoGenPhase.Error, error = "Enter a video description.")
+        if (transferUri == null || fileInfo == null) {
+            _uiState.value = initial.copy(phase = MeshModelPhase.Error, error = "Choose an asset image first.")
             return
         }
         if (!initial.hasEnoughCredits) {
-            _uiState.value = initial.copy(phase = VideoGenPhase.Error, error = "Not enough credits for this run.")
+            _uiState.value = initial.copy(phase = MeshModelPhase.Error, error = "Not enough credits for this run.")
             return
         }
 
         generationJob?.cancel()
         generationJob = viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                phase = VideoGenPhase.Connecting,
+            _uiState.value = initial.copy(
+                phase = MeshModelPhase.Connecting,
                 statusMessage = "Opening direct transfer...",
                 error = null,
-                saveMessage = null,
-                currentTaskId = null,
-                currentTask = null,
-                results = emptyList()
+                saveMessage = null
             )
+            val clientId = currentClientId(fallbackClientId)
+
             try {
-                val clientId = currentClientId(fallbackClientId)
-                val transport = createTransport(appContext, clientId)
-                val files = mapOf(
-                    "startImage" to (startTransferUri to startFileInfo),
-                    "endImage" to (endTransferUri to endFileInfo)
-                )
-                transport.setInputFiles(files)
-                webRtcClient = transport
-
-                val connected = transport.connect()
-                if (!connected) error("WebRTC direct transfer did not connect to the local agent.")
+                val transport = webRtcClient?.takeIf { it.isOpen() } ?: createTransport(appContext, clientId).also {
+                    webRtcClient?.close()
+                    webRtcClient = it
+                    val connected = it.connect()
+                    if (!connected) error("WebRTC direct transfer did not connect to the local agent.")
+                }
 
                 _uiState.value = _uiState.value.copy(
-                    phase = VideoGenPhase.Submitting,
-                    statusMessage = "Creating Video Generation task..."
+                    statusMessage = "Uploading image...",
+                    phase = MeshModelPhase.Connecting
                 )
-
-                val taskId = OneImageApi.submitVideoWorkflow(
-                    baseUrl = baseUrl,
-                    clientId = clientId,
-                    prompt = prompt,
-                    startFileInfo = startFileInfo,
-                    endFileInfo = endFileInfo,
-                    duration = initial.duration,
-                    frameRate = initial.frameRate
-                )
+                transport.setInputFiles(mapOf("meshImage" to (transferUri to fileInfo)))
 
                 _uiState.value = _uiState.value.copy(
-                    phase = VideoGenPhase.Running,
-                    statusMessage = "Queued",
-                    currentTaskId = taskId
+                    statusMessage = "Creating task...",
+                    phase = MeshModelPhase.Submitting
+                )
+                val taskId = OneImageApi.submitMeshModelWorkflow(baseUrl, clientId, fileInfo)
+
+                _uiState.value = _uiState.value.copy(
+                    currentTaskId = taskId,
+                    phase = MeshModelPhase.Running,
+                    statusMessage = "Queued"
                 )
 
-                repeat(180) {
+                repeat(300) {
                     val task = OneImageApi.getImageTask(baseUrl, clientId, taskId)
-                    if (task != null) applyTaskSnapshot(task)
-                    when (task?.status) {
-                        "completed", "failed", "cancelled" -> return@launch
+                    if (task != null) {
+                        applyTaskSnapshot(task)
+                        if (task.status in setOf("completed", "failed", "cancelled")) {
+                            return@launch
+                        }
                     }
                     delay(2000)
                 }
 
                 _uiState.value = _uiState.value.copy(
-                    phase = VideoGenPhase.Error,
+                    phase = MeshModelPhase.Error,
                     error = "Timed out waiting for the task to finish.",
                     statusMessage = "Timed out"
                 )
             } catch (error: Exception) {
                 _uiState.value = _uiState.value.copy(
-                    phase = VideoGenPhase.Error,
+                    phase = MeshModelPhase.Error,
                     error = error.message ?: "Unknown error",
                     statusMessage = "Error"
                 )
@@ -326,7 +259,7 @@ class VideoGenViewModel : ViewModel() {
                 OneImageApi.cancelTask(baseUrl, currentClientId(fallbackClientId), taskId)
                 webRtcClient?.close()
                 _uiState.value = _uiState.value.copy(
-                    phase = VideoGenPhase.Cancelled,
+                    phase = MeshModelPhase.Cancelled,
                     statusMessage = "Cancelled",
                     error = null
                 )
@@ -338,8 +271,6 @@ class VideoGenViewModel : ViewModel() {
 
     fun loadTask(task: OneImageTask) {
         _uiState.value = _uiState.value.copy(
-            prompt = task.prompt ?: _uiState.value.prompt,
-            isLightning = task.isLightning,
             currentTaskId = task.id,
             currentTask = task,
             results = mergeResults(emptyList(), task.results),
@@ -356,7 +287,7 @@ class VideoGenViewModel : ViewModel() {
             try {
                 loadTask(task)
                 _uiState.value = _uiState.value.copy(
-                    phase = VideoGenPhase.Restoring,
+                    phase = MeshModelPhase.Restoring,
                     statusMessage = "Restoring result files...",
                     error = null
                 )
@@ -367,11 +298,11 @@ class VideoGenViewModel : ViewModel() {
                     val connected = it.connect()
                     if (!connected) error("WebRTC direct transfer did not connect to the local agent.")
                 }
-                val sent = transport.requestTaskResults(task.id, task.type.ifBlank { "image" })
+                val sent = transport.requestTaskResults(task.id, task.type.ifBlank { "image_to_3d_mesh" })
                 if (!sent) error("Restore request could not be sent.")
             } catch (error: Exception) {
                 _uiState.value = _uiState.value.copy(
-                    phase = VideoGenPhase.Error,
+                    phase = MeshModelPhase.Error,
                     error = error.message ?: "Could not restore results.",
                     statusMessage = "Restore failed"
                 )
@@ -388,7 +319,7 @@ class VideoGenViewModel : ViewModel() {
                         currentTaskId = null,
                         currentTask = null,
                         results = emptyList(),
-                        phase = VideoGenPhase.Idle,
+                        phase = MeshModelPhase.Idle,
                         statusMessage = "Ready"
                     )
                 }
@@ -402,7 +333,7 @@ class VideoGenViewModel : ViewModel() {
         val appContext = context.applicationContext
         viewModelScope.launch {
             try {
-                val savedUri = copyResultToPictures(appContext, result)
+                val savedUri = copyResultToDownloads(appContext, result)
                 _uiState.value = _uiState.value.copy(
                     saveMessage = "Saved ${savedUri.lastPathSegment ?: result.filename.ifBlank { result.label }}",
                     error = null
@@ -439,8 +370,8 @@ class VideoGenViewModel : ViewModel() {
                 val current = _uiState.value
                 _uiState.value = current.copy(
                     results = mergeResults(current.results, listOf(result)),
-                    phase = if (current.phase == VideoGenPhase.Restoring) VideoGenPhase.Completed else current.phase,
-                    statusMessage = if (current.phase == VideoGenPhase.Restoring) "Completed" else current.statusMessage,
+                    phase = if (current.phase == MeshModelPhase.Restoring) MeshModelPhase.Completed else current.phase,
+                    statusMessage = if (current.phase == MeshModelPhase.Restoring) "Completed" else current.statusMessage,
                     error = null
                 )
             }
@@ -459,12 +390,12 @@ class VideoGenViewModel : ViewModel() {
         )
     }
 
-    private fun phaseForTask(task: OneImageTask): VideoGenPhase = when (task.status) {
-        "pending", "processing", "initializing" -> VideoGenPhase.Running
-        "completed" -> VideoGenPhase.Completed
-        "cancelled" -> VideoGenPhase.Cancelled
-        "failed" -> VideoGenPhase.Error
-        else -> VideoGenPhase.Idle
+    private fun phaseForTask(task: OneImageTask): MeshModelPhase = when (task.status) {
+        "pending", "processing", "initializing" -> MeshModelPhase.Running
+        "completed" -> MeshModelPhase.Completed
+        "cancelled" -> MeshModelPhase.Cancelled
+        "failed" -> MeshModelPhase.Error
+        else -> MeshModelPhase.Idle
     }
 
     private fun mergeResults(current: List<OneImageTaskResult>, incoming: List<OneImageTaskResult>): List<OneImageTaskResult> {
@@ -498,7 +429,6 @@ class VideoGenViewModel : ViewModel() {
         auth.currentUser?.uid ?: fallbackClientId
 
 
-
     private fun listenToTasks(uid: String) {
         tasksListener = firestore.collection("tasks")
             .whereEqualTo("clientId", uid)
@@ -508,7 +438,7 @@ class VideoGenViewModel : ViewModel() {
                 if (error != null || snapshot == null) return@addSnapshotListener
                 val tasks = snapshot.documents
                     .mapNotNull(::taskFromDocument)
-                    .filter { it.type == "video" }
+                    .filter { it.type == "image_to_3d_mesh" }
                 val activeTaskId = _uiState.value.currentTaskId
                 _uiState.value = _uiState.value.copy(history = tasks)
                 val active = tasks.firstOrNull { it.id == activeTaskId }
@@ -523,33 +453,22 @@ class VideoGenViewModel : ViewModel() {
                 val data = snapshot?.data
                 val lastSeen = firestoreMillis(data?.get("lastSeen"))
                 val fresh = lastSeen > 0L && System.currentTimeMillis() - lastSeen <= ENGINE_STATUS_STALE_MS
-                _uiState.value = _uiState.value.copy(engineReady = fresh && data?.get("video") == true)
-            }
-        queueListener = firestore.collection("system_status").document("queue")
-            .addSnapshotListener { snapshot, _ ->
-                val data = snapshot?.data
-                _uiState.value = _uiState.value.copy(
-                    queueStatus = if (data == null) null else OneImageQueueStatus(
-                        totalPending = number(data["totalPending"]),
-                        totalProcessing = number(data["totalProcessing"]),
-                        estimatedWaitTime = number(data["estimatedWaitTime"])
-                    )
-                )
+                _uiState.value = _uiState.value.copy(engineReady = fresh && data?.get("image") == true)
             }
     }
 
     private fun detachUserListeners() {
         tasksListener?.remove()
-        enginesListener?.remove()
-        queueListener?.remove()
         tasksListener = null
+        enginesListener?.remove()
         enginesListener = null
+        queueListener?.remove()
         queueListener = null
     }
 
-    private suspend fun prepareImageForOneImage(context: Context, uri: Uri): PreparedImage = withContext(Dispatchers.IO) {
+    private suspend fun prepareImageForMesh(context: Context, uri: Uri): PreparedImage = withContext(Dispatchers.IO) {
         val original = decodeBitmap(context, uri)
-        val ratio = min(1536f / original.width.toFloat(), 1536f / original.height.toFloat()).coerceAtMost(1f)
+        val ratio = min(1024f / original.width.toFloat(), 1024f / original.height.toFloat()).coerceAtMost(1f)
         val bitmap = if (ratio < 1f) {
             Bitmap.createScaledBitmap(
                 original,
@@ -560,8 +479,8 @@ class VideoGenViewModel : ViewModel() {
         } else {
             original
         }
-        val directory = File(context.cacheDir, "oneimage-inputs").apply { mkdirs() }
-        val file = File(directory, "oneimage_input_${System.currentTimeMillis()}.webp")
+        val directory = File(context.cacheDir, "mesh-inputs").apply { mkdirs() }
+        val file = File(directory, "mesh_input_${System.currentTimeMillis()}.webp")
         file.outputStream().use { output ->
             @Suppress("DEPRECATION")
             val format = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -569,7 +488,7 @@ class VideoGenViewModel : ViewModel() {
             } else {
                 Bitmap.CompressFormat.WEBP
             }
-            bitmap.compress(format, 85, output)
+            bitmap.compress(format, 92, output)
         }
         if (bitmap !== original) bitmap.recycle()
         original.recycle()
@@ -594,33 +513,47 @@ class VideoGenViewModel : ViewModel() {
         }
     }
 
-    private suspend fun copyResultToPictures(context: Context, result: OneImageTaskResult): Uri = withContext(Dispatchers.IO) {
+    private suspend fun copyResultToDownloads(context: Context, result: OneImageTaskResult): Uri = withContext(Dispatchers.IO) {
         if (result.url.startsWith("webrtc://")) error("This result needs to be restored before saving.")
-        val filename = safeFilename(result.filename.ifBlank { "${result.label}.png" })
+        val filename = safeFilename(result.filename.ifBlank { "${result.label}.glb" })
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-            put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
+            put(MediaStore.MediaColumns.MIME_TYPE, "model/gltf-binary")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_MOVIES}/Image Generation")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
         }
         val resolver = context.contentResolver
-        val outputUri = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
-            ?: error("Could not create image file.")
-        try {
-            resolver.openOutputStream(outputUri)?.use { output ->
-                openResultStream(context, result.url).use { input -> input.copyTo(output) }
-            } ?: error("Could not write image file.")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val contentUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            MediaStore.Downloads.EXTERNAL_CONTENT_URI
+        } else {
+            @Suppress("DEPRECATION")
+            Uri.fromFile(File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), filename))
+        }
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val outputUri = resolver.insert(contentUri, values)
+                ?: error("Could not create download file.")
+            try {
+                resolver.openOutputStream(outputUri)?.use { output ->
+                    openResultStream(context, result.url).use { input -> input.copyTo(output) }
+                } ?: error("Could not write download file.")
                 values.clear()
                 values.put(MediaStore.MediaColumns.IS_PENDING, 0)
                 resolver.update(outputUri, values, null, null)
+                outputUri
+            } catch (error: Exception) {
+                resolver.delete(outputUri, null, null)
+                throw error
             }
-            outputUri
-        } catch (error: Exception) {
-            resolver.delete(outputUri, null, null)
-            throw error
+        } else {
+            val outputFile = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), filename)
+            outputFile.parentFile?.mkdirs()
+            outputFile.outputStream().use { output ->
+                openResultStream(context, result.url).use { input -> input.copyTo(output) }
+            }
+            Uri.fromFile(outputFile)
         }
     }
 
@@ -633,8 +566,8 @@ class VideoGenViewModel : ViewModel() {
     }
 
     private fun safeFilename(value: String): String {
-        val cleaned = value.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "onevideo_result.mp4" }
-        return if (cleaned.contains(".")) cleaned else "$cleaned.mp4"
+        val cleaned = value.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "game_mesh_result.glb" }
+        return if (cleaned.contains(".")) cleaned else "$cleaned.glb"
     }
 
     private fun taskFromDocument(document: DocumentSnapshot): OneImageTask? {
@@ -667,6 +600,7 @@ class VideoGenViewModel : ViewModel() {
             results = results
         )
     }
+
     private fun firestoreMillis(value: Any?): Long = when (value) {
         is Timestamp -> value.toDate().time
         is Date -> value.time
@@ -685,6 +619,3 @@ fun OneImageTask.createdAtText(): String {
     if (createdAtMs <= 0L) return ""
     return DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(createdAtMs))
 }
-
-
-

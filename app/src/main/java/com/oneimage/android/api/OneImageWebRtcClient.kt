@@ -206,14 +206,25 @@ class OneImageWebRtcClient(
         val text = bytes.toString(Charsets.UTF_8)
         val json = runCatching { JSONObject(text) }.getOrNull() ?: return
         when (json.optString("type")) {
-            "request_file" -> sendSelectedImage(json.optString("fileId", "inputImage"))
+            "request_file" -> sendSelectedFile(json.optString("fileId", "inputImage"))
+            "request_files" -> {
+                val files = json.optJSONArray("files")
+                if (files != null) {
+                    for (index in 0 until files.length()) {
+                        val file = files.optJSONObject(index) ?: continue
+                        sendSelectedFile(file.optString("id", "inputImage"))
+                    }
+                }
+            }
             "file_start" -> {
                 val fileId = json.getString("fileId")
+                val wireSize = json.optLong("size", 0L)
                 incomingFiles[fileId] = IncomingFile(
                     fileId = fileId,
                     filename = json.optString("filename", "result"),
                     mimeType = json.optString("mimetype", "application/octet-stream"),
-                    size = json.optLong("size", 0L),
+                    size = wireSize,
+                    originalSize = json.optLong("originalSize", wireSize),
                     taskId = json.optString("taskId").ifBlank { null },
                     label = json.optString("label").ifBlank { null }
                 )
@@ -226,7 +237,7 @@ class OneImageWebRtcClient(
     }
 
     @OptIn(DelicateCoroutinesApi::class)
-    private fun sendSelectedImage(requestedFileId: String) {
+    private fun sendSelectedFile(requestedFileId: String) {
         val channel = dataChannel ?: return
         val entry = inputFiles[requestedFileId] ?: inputFiles.values.firstOrNull() ?: return
         val uri = entry.first
@@ -279,6 +290,7 @@ class OneImageWebRtcClient(
         val directory = File(context.cacheDir, "oneimage-results").apply { mkdirs() }
         val file = File(directory, "${incoming.fileId}-$safeName")
         file.writeBytes(incoming.bytes.toByteArray())
+        
         dataChannel?.let { channel ->
             sendJson(
                 channel,
@@ -324,6 +336,7 @@ class OneImageWebRtcClient(
         val filename: String,
         val mimeType: String,
         val size: Long,
+        val originalSize: Long,
         val taskId: String?,
         val label: String?,
         val bytes: ByteArrayOutputStream = ByteArrayOutputStream()

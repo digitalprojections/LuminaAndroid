@@ -27,6 +27,8 @@ import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.oneimage.android.R
+import androidx.compose.ui.graphics.Brush
+import com.oneimage.android.ui.theme.PrimaryGradient
 
 @Composable
 fun LoginScreen(
@@ -42,6 +44,10 @@ fun LoginScreen(
             onLoginSuccess()
         }
     }
+    
+    val surfaceGradient = Brush.verticalGradient(
+        colors = listOf(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.background)
+    )
 
     val googleSignInOptions = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
         .requestIdToken(context.getString(R.string.default_web_client_id))
@@ -75,109 +81,130 @@ fun LoginScreen(
         }
     }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            .background(surfaceGradient)
     ) {
-        Surface(
-            modifier = Modifier.size(80.dp),
-            color = MaterialTheme.colorScheme.primary,
-            shape = CircleShape
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = androidx.compose.material.icons.Icons.Default.AutoAwesome,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(40.dp)
-                )
-            }
-        }
-        
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(
-            text = "OneImage",
-            fontSize = 32.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
-            letterSpacing = 0.sp
-        )
-        Text(
-            text = "Create with the OneImage backend",
-            fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 8.dp)
-        )
-
-        Spacer(modifier = Modifier.height(64.dp))
-
-        Button(
-            onClick = { startGoogleSignIn() },
-            enabled = !isLoading,
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            shape = RoundedCornerShape(24.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            )
+                .fillMaxSize()
+                .systemBarsPadding()
+                .padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            Text("Get Started", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        TextButton(
-            onClick = { startGoogleSignIn() },
-            enabled = !isLoading,
-            modifier = Modifier.height(56.dp)
-        ) {
-            Text(
-                if (isLoading) "Signing in..." else "Sign in with Google",
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-                fontWeight = FontWeight.Medium
-            )
-        }
-
-        if (uiState is AuthUiState.Error) {
-            Text(
-                text = (uiState as AuthUiState.Error).message,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 16.dp),
-                fontSize = 12.sp
-            )
-        }
-        
-        Spacer(modifier = Modifier.height(32.dp))
-        
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                "Privacy Policy",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
             Box(
                 modifier = Modifier
-                    .padding(horizontal = 8.dp)
-                    .size(4.dp)
-                    .background(MaterialTheme.colorScheme.outline, CircleShape)
-            )
+                    .size(96.dp)
+                    .background(PrimaryGradient, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(48.dp)
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(32.dp))
+
             Text(
-                "Terms of Use",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                text = "Workflow Studio",
+                style = MaterialTheme.typography.displayLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+                textAlign = TextAlign.Center
             )
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Text(
+                text = "Create stunning images, videos, and professional creator assets effortlessly.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+
+            Spacer(modifier = Modifier.height(64.dp))
+
+            Button(
+                onClick = { startGoogleSignIn() },
+                enabled = !isLoading,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(60.dp),
+                shape = RoundedCornerShape(30.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.Transparent,
+                ),
+                contentPadding = PaddingValues()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(PrimaryGradient),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Get Started", 
+                        fontWeight = FontWeight.Bold, 
+                        fontSize = 18.sp,
+                        color = Color.Black
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            TextButton(
+                onClick = { startGoogleSignIn() },
+                enabled = !isLoading,
+                modifier = Modifier.height(56.dp)
+            ) {
+                Text(
+                    if (isLoading) "Signing in..." else "Sign in with Google",
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 16.sp
+                )
+            }
+
+            if (uiState is AuthUiState.Error) {
+                Text(
+                    text = (uiState as AuthUiState.Error).message,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 16.dp),
+                    fontSize = 13.sp
+                )
+            }
+            
+            Spacer(modifier = Modifier.weight(1f))
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Privacy Policy",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp)
+                        .size(4.dp)
+                        .background(MaterialTheme.colorScheme.outline, CircleShape)
+                )
+                Text(
+                    "Terms of Use",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }

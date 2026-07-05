@@ -113,8 +113,8 @@ fun ImageGenScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("OneImage", fontWeight = FontWeight.Bold)
-                        Text("Multi-angle character workflow", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Image Generation", fontWeight = FontWeight.Bold)
+                        Text("Consistent character view set", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
                 navigationIcon = {
@@ -217,7 +217,7 @@ fun ImageGenScreen(
 private fun StatusStrip(state: ImageGenUiState) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
         StatusChip(
-            label = if (state.engineReady) "ENGINE READY" else "ENGINE SYNC",
+            label = if (state.engineReady) "READY" else "CONNECTING",
             positive = state.engineReady,
             modifier = Modifier.weight(1f)
         )
@@ -304,7 +304,7 @@ private fun SourcePanel(
                         }
                         Spacer(modifier = Modifier.height(16.dp))
                         Text("Choose an image", fontWeight = FontWeight.Medium)
-                        Text("PNG or JPG is compressed to the OneImage transfer format", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("PNG or JPG is compressed to the Image Generation transfer format", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -532,7 +532,7 @@ private fun HistoryPanel(
                 Text("Recent Generations", fontWeight = FontWeight.Bold)
             }
             if (tasks.isEmpty()) {
-                Text("No OneImage history yet.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("No Image Generation history yet.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 tasks.take(12).forEachIndexed { index, task ->
                     if (index > 0) HorizontalDivider()
@@ -560,7 +560,7 @@ private fun HistoryRow(
     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(task.prompt?.ifBlank { "OneImage generation" } ?: "OneImage generation", maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                Text(task.prompt?.ifBlank { "Image Generation task" } ?: "Image Generation task", maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
                 Text(
                     listOf(task.status, task.createdAtText()).filter { it.isNotBlank() }.joinToString(" · "),
                     fontSize = 12.sp,
@@ -607,3 +607,6 @@ private fun formatSize(bytes: Long): String {
     val mb = bytes / (1024f * 1024f)
     return if (mb >= 1f) String.format("%.1f MB", mb) else "${(bytes / 1024L).coerceAtLeast(1L)} KB"
 }
+
+
+

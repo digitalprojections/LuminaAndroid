@@ -12,6 +12,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
@@ -66,6 +67,35 @@ data class OneImageAccountProfile(
 ) {
     val hasUnlimitedAccess: Boolean
         get() = role == "admin" || subscriptionStatus == "comped" || isAdmin || admin
+
+    val isSubscribed: Boolean
+        get() = subscriptionStatus == "active" || subscriptionStatus == "trialing" || subscriptionStatus == "comped"
+
+    companion object {
+        fun fromFirestoreMap(uid: String, data: Map<String, Any>): OneImageAccountProfile {
+            val credits = if (data.containsKey("credits")) {
+                (data["credits"] as? Number)?.toLong() ?: 0L
+            } else {
+                (data["tokenBalance"] as? Number)?.toLong() ?: 0L
+            }
+            return OneImageAccountProfile(
+                uid = uid,
+                email = data["email"]?.toString(),
+                displayName = data["displayName"]?.toString(),
+                credits = credits,
+                tokenBalance = (data["tokenBalance"] as? Number)?.toLong(),
+                role = data["role"]?.toString(),
+                subscriptionStatus = data["subscriptionStatus"]?.toString(),
+                subscriptionPlan = data["subscriptionPlan"]?.toString(),
+                isAdmin = data["isAdmin"] as? Boolean ?: false,
+                admin = data["admin"] as? Boolean ?: false
+            )
+        }
+    }
+
+    fun hasEnoughCredits(estimatedCredits: Int): Boolean {
+        return hasUnlimitedAccess || credits >= estimatedCredits.toLong()
+    }
 
     val creditBalanceText: String
         get() = if (hasUnlimitedAccess) "Unlimited" else credits.coerceAtLeast(0).toString()
@@ -175,6 +205,183 @@ object OneImageApi {
         }
     }
 
+    suspend fun submitLipSyncWorkflow(
+        baseUrl: String,
+        clientId: String,
+        prompt: String,
+        imageFileInfo: OneImageFileInfo,
+        audioFileInfo: OneImageFileInfo,
+        audioStart: Float = 0f,
+        duration: Float = 10f,
+        frameRate: Int = 24,
+        width: Int = 512,
+        height: Int = 512,
+        audioDuration: Float = duration
+    ): String = withContext(Dispatchers.IO) {
+        val payload = JSONObject()
+            .put("clientId", clientId)
+            .put("prompt", prompt)
+            .put("seed", 0)
+            .put("audioStart", audioStart)
+            .put("duration", duration)
+            .put("frameRate", frameRate)
+            .put("width", width)
+            .put("height", height)
+            .put("inputImageName", imageFileInfo.filename)
+            .put("inputImageMimetype", imageFileInfo.mimeType)
+            .put("inputImageSize", imageFileInfo.size)
+            .put("inputAudioName", audioFileInfo.filename)
+            .put("inputAudioMimetype", audioFileInfo.mimeType)
+            .put("inputAudioSize", audioFileInfo.size)
+            .put("inputAudioDuration", audioDuration)
+
+        val requestBuilder = Request.Builder()
+            .url("${baseUrl.trimEnd('/')}/api/lipsync/generate")
+            .post(payload.toString().toRequestBody("application/json".toMediaType()))
+            .addHeader("Content-Type", "application/json")
+
+        FirebaseAuth.getInstance().currentUser?.getIdToken(false)?.awaitResult()?.token?.let { token ->
+            requestBuilder.addHeader("Authorization", "Bearer $token")
+        }
+
+        client.newCall(requestBuilder.build()).execute().use { response ->
+            val text = response.body?.string().orEmpty()
+            val json = JSONObject(text.ifBlank { "{}" })
+            if (!response.isSuccessful || json.optBoolean("success") == false) {
+                error(json.optString("message", "Lip sync generation failed to start."))
+            }
+            json.getString("taskId")
+        }
+    }
+
+    suspend fun submitCharacterReplacementWorkflow(
+        baseUrl: String,
+        clientId: String,
+        prompt: String,
+        videoFileInfo: OneImageFileInfo,
+        imageFileInfo: OneImageFileInfo,
+        duration: Float,
+        sourceDuration: Float
+    ): String = postGeneration(
+        baseUrl = baseUrl,
+        path = "/api/character-replacement/generate",
+        payload = JSONObject()
+            .put("clientId", clientId)
+            .put("prompt", prompt)
+            .put("seed", 0)
+            .put("duration", duration)
+            .put("inputVideoName", videoFileInfo.filename)
+            .put("inputVideoMimetype", videoFileInfo.mimeType)
+            .put("inputVideoSize", videoFileInfo.size)
+            .put("inputVideoDuration", sourceDuration)
+            .put("inputImageName", imageFileInfo.filename)
+            .put("inputImageMimetype", imageFileInfo.mimeType)
+            .put("inputImageSize", imageFileInfo.size),
+        fallbackMessage = "Character replacement failed to start."
+    )
+
+    suspend fun submitQwenStoryImagesWorkflow(
+        baseUrl: String,
+        clientId: String,
+        imageFileInfo: OneImageFileInfo,
+        storyPrompt: String,
+        stylePrompt: String
+    ): String = postGeneration(
+        baseUrl = baseUrl,
+        path = "/api/qwen-story-images/generate",
+        payload = JSONObject()
+            .put("clientId", clientId)
+            .put("storyPrompt", storyPrompt)
+            .put("stylePrompt", stylePrompt)
+            .put("seed", 0)
+            .put("inputImageName", imageFileInfo.filename)
+            .put("inputImageMimetype", imageFileInfo.mimeType)
+            .put("inputImageSize", imageFileInfo.size),
+        fallbackMessage = "Story image generation failed to start."
+    )
+
+    suspend fun submitMeshModelWorkflow(
+        baseUrl: String,
+        clientId: String,
+        imageFileInfo: OneImageFileInfo
+    ): String = postGeneration(
+        baseUrl = baseUrl,
+        path = "/api/image-to-3d-mesh/generate",
+        payload = JSONObject()
+            .put("clientId", clientId)
+            .put("seed", 0)
+            .put("inputImageName", imageFileInfo.filename)
+            .put("inputImageMimetype", imageFileInfo.mimeType)
+            .put("inputImageSize", imageFileInfo.size),
+        fallbackMessage = "Mesh generation failed to start."
+    )
+
+    suspend fun submitGameAssetUpscalerWorkflow(
+        baseUrl: String,
+        clientId: String,
+        imageFileInfo: OneImageFileInfo,
+        description: String,
+        importantDescription: String,
+        negativePrompt: String
+    ): String = postGeneration(
+        baseUrl = baseUrl,
+        path = "/api/game-asset-upscaler/generate",
+        payload = JSONObject()
+            .put("clientId", clientId)
+            .put("description", description)
+            .put("importantDescription", importantDescription)
+            .put("negativePrompt", negativePrompt)
+            .put("seed", 0)
+            .put("inputImageName", imageFileInfo.filename)
+            .put("inputImageMimetype", imageFileInfo.mimeType)
+            .put("inputImageSize", imageFileInfo.size),
+        fallbackMessage = "Game asset upscaler failed to start."
+    )
+
+    suspend fun submitVideoDescriptionWorkflow(
+        baseUrl: String,
+        clientId: String,
+        videoFileInfo: OneImageFileInfo,
+        duration: Float
+    ): String = postGeneration(
+        baseUrl = baseUrl,
+        path = "/api/video-description/generate",
+        payload = JSONObject()
+            .put("clientId", clientId)
+            .put("inputName", videoFileInfo.filename)
+            .put("inputMimetype", videoFileInfo.mimeType)
+            .put("inputSize", videoFileInfo.size)
+            .put("duration", duration),
+        fallbackMessage = "Video description failed to start."
+    )
+
+    suspend fun submitKeyframesWorkflow(
+        baseUrl: String,
+        clientId: String,
+        inputs: List<KeyframeWorkflowInput>
+    ): String {
+        val inputArray = JSONArray()
+        inputs.forEachIndexed { index, input ->
+            inputArray.put(
+                JSONObject()
+                    .put("image", "webrtc://image_$index")
+                    .put("filename", input.fileInfo.filename)
+                    .put("mimetype", input.fileInfo.mimeType)
+                    .put("size", input.fileInfo.size)
+                    .put("prompt", input.prompt)
+                    .put("durationFrames", input.durationFrames)
+            )
+        }
+        return postGeneration(
+            baseUrl = baseUrl,
+            path = "/api/keyframes/generate",
+            payload = JSONObject()
+                .put("clientId", clientId)
+                .put("useWebRTC", true)
+                .put("params", JSONObject().put("inputs", inputArray)),
+            fallbackMessage = "Keyframes generation failed to start."
+        )
+    }
     suspend fun cancelTask(baseUrl: String, clientId: String, taskId: String) = postTaskAction(
         baseUrl = baseUrl,
         path = "/api/task/cancel",
@@ -276,6 +483,30 @@ object OneImageApi {
         )
     }
 
+    private suspend fun postGeneration(
+        baseUrl: String,
+        path: String,
+        payload: JSONObject,
+        fallbackMessage: String
+    ): String = withContext(Dispatchers.IO) {
+        val requestBuilder = Request.Builder()
+            .url("${baseUrl.trimEnd('/')}$path")
+            .post(payload.toString().toRequestBody("application/json".toMediaType()))
+            .addHeader("Content-Type", "application/json")
+
+        FirebaseAuth.getInstance().currentUser?.getIdToken(false)?.awaitResult()?.token?.let { token ->
+            requestBuilder.addHeader("Authorization", "Bearer $token")
+        }
+
+        client.newCall(requestBuilder.build()).execute().use { response ->
+            val text = response.body?.string().orEmpty()
+            val json = JSONObject(text.ifBlank { "{}" })
+            if (!response.isSuccessful || json.optBoolean("success") == false) {
+                error(json.optString("message", fallbackMessage))
+            }
+            json.getString("taskId")
+        }
+    }
     private fun parseAccountProfile(json: JSONObject): OneImageAccountProfile {
         val credits = when {
             json.has("credits") -> json.optLong("credits", 0)
@@ -333,6 +564,11 @@ object OneImageApi {
     }
 }
 
+data class KeyframeWorkflowInput(
+    val fileInfo: OneImageFileInfo,
+    val prompt: String,
+    val durationFrames: Int
+)
 suspend fun <T> Task<T>.awaitResult(): T = suspendCancellableCoroutine { continuation ->
     addOnSuccessListener { result -> continuation.resume(result) }
     addOnFailureListener { error -> continuation.resumeWithException(error) }

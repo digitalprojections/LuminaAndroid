@@ -59,7 +59,7 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.width(16.dp))
                     Column {
                         Text(
-                            text = user?.displayName ?: profile?.displayName ?: "OneImage User",
+                            text = user?.displayName ?: profile?.displayName ?: "Creator",
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp
                         )
@@ -149,3 +149,4 @@ private fun AccountRow(label: String, value: String) {
         Text(value, fontWeight = FontWeight.SemiBold)
     }
 }
+

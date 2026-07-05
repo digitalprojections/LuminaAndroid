@@ -20,6 +20,14 @@ class AccountViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(AccountUiState())
     val uiState: StateFlow<AccountUiState> = _uiState
 
+    init {
+        viewModelScope.launch {
+            com.oneimage.android.api.AccountManager.profileFlow.collect { profile ->
+                _uiState.value = _uiState.value.copy(profile = profile)
+            }
+        }
+    }
+
     fun loadProfile() {
         if (_uiState.value.isLoading) return
 
@@ -29,10 +37,13 @@ class AccountViewModel : ViewModel() {
                 OneImageApi.bootstrapAccountProfile(
                     BuildConfig.ONEIMAGE_API_BASE_URL.ifBlank { "https://genstudio.web.app/" }
                 )
-            }.onSuccess { profile ->
-                _uiState.value = AccountUiState(profile = profile)
+            }.onSuccess { 
+                _uiState.value = _uiState.value.copy(isLoading = false)
             }.onFailure { error ->
-                _uiState.value = AccountUiState(error = error.message ?: "Could not load account profile.")
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = error.message ?: "Could not load account profile."
+                )
             }
         }
     }

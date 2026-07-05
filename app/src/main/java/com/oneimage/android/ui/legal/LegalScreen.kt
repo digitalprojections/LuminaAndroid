@@ -36,7 +36,7 @@ fun LegalScreen(onBack: () -> Unit) {
                 Text(text = "Privacy Policy", fontWeight = FontWeight.Bold, fontSize = 20.sp)
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "OneImage respects your privacy. We use your data strictly to provide image, video, and asset generation features through the OneImage backend.\n\nWe do not sell your personal information to third parties. Subscription payments are handled securely via Stripe.",
+                    text = "Workflow Studio respects your privacy. We use your data strictly to provide image, video, and asset generation features through the service.\n\nWe do not sell your personal information to third parties. Subscription payments are handled securely via Stripe.",
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -46,7 +46,7 @@ fun LegalScreen(onBack: () -> Unit) {
                 Text(text = "Terms of Use", fontWeight = FontWeight.Bold, fontSize = 20.sp)
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "By using OneImage, you agree not to use the generation services to create harmful, illegal, or NSFW content. Monthly subscriptions are billed automatically via Stripe and can be cancelled at any time in the Billing section.",
+                    text = "By using this app, you agree not to use the generation services to create harmful, illegal, or NSFW content. Monthly subscriptions are billed automatically via Stripe and can be cancelled at any time in the Billing section.",
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -54,3 +54,6 @@ fun LegalScreen(onBack: () -> Unit) {
         }
     }
 }
+
+
+

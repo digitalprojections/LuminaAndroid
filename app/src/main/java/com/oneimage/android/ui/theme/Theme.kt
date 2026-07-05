@@ -9,35 +9,39 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.graphics.Color
 
 private val DarkColorScheme =
   darkColorScheme(
-    primary = LuminaPrimary,
-    onPrimary = LuminaOnPrimary,
-    primaryContainer = LuminaPrimaryVariant,
-    onPrimaryContainer = LuminaPrimary,
-    secondary = LuminaSecondary,
-    onSecondary = LuminaOnPrimary,
-    background = LuminaBackground,
-    surface = LuminaSurface,
-    onBackground = LuminaText,
-    onSurface = LuminaText,
-    outline = LuminaOutline,
-    surfaceVariant = LuminaSurfaceVariant,
-    onSurfaceVariant = LuminaMuted
+    primary = LuminaDarkPrimary,
+    onPrimary = LuminaDarkOnPrimary,
+    primaryContainer = LuminaDarkPrimaryVariant,
+    onPrimaryContainer = LuminaDarkPrimary,
+    secondary = LuminaDarkSecondary,
+    onSecondary = LuminaDarkOnSecondary,
+    background = LuminaDarkBackground,
+    surface = LuminaDarkSurface,
+    onBackground = LuminaDarkText,
+    onSurface = LuminaDarkText,
+    outline = LuminaDarkOutline,
+    surfaceVariant = LuminaDarkSurfaceVariant,
+    onSurfaceVariant = LuminaDarkMuted
   )
 
 private val LightColorScheme =
   lightColorScheme(
-    primary = LuminaPrimary,
-    onPrimary = LuminaOnPrimary,
-    secondary = LuminaSecondary,
-    background = Color.White,
-    surface = Color.White,
-    onBackground = LuminaBackground,
-    onSurface = LuminaBackground,
-    outline = LuminaOutline
+    primary = LuminaLightPrimary,
+    onPrimary = LuminaLightOnPrimary,
+    primaryContainer = LuminaLightPrimaryVariant,
+    onPrimaryContainer = LuminaLightPrimary,
+    secondary = LuminaLightSecondary,
+    onSecondary = LuminaLightOnSecondary,
+    background = LuminaLightBackground,
+    surface = LuminaLightSurface,
+    onBackground = LuminaLightText,
+    onSurface = LuminaLightText,
+    outline = LuminaLightOutline,
+    surfaceVariant = LuminaLightSurfaceVariant,
+    onSurfaceVariant = LuminaLightMuted
   )
 
 @Composable
@@ -53,10 +57,10 @@ fun LuminaTheme(
         val context = LocalContext.current
         if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
       }
-
       darkTheme -> DarkColorScheme
       else -> LightColorScheme
     }
 
   MaterialTheme(colorScheme = colorScheme, typography = Typography, content = content)
 }
+
