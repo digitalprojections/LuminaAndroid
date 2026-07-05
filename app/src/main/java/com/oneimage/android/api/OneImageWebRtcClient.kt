@@ -51,7 +51,8 @@ class OneImageWebRtcClient(
     private var candidateListener: ListenerRegistration? = null
     private val inputFiles = mutableMapOf<String, Pair<Uri, OneImageFileInfo>>()
     private val incomingFiles = mutableMapOf<String, IncomingFile>()
-
+    private val pendingCandidates = mutableListOf<IceCandidate>()
+    private var isOfferWritten = false
     init {
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(context.applicationContext)
@@ -104,17 +105,13 @@ class OneImageWebRtcClient(
                 override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) = Unit
                 override fun onIceCandidate(candidate: IceCandidate?) {
                     if (candidate == null) return
-                    firestore.collection("webrtc_signals")
-                        .document(id)
-                        .collection("candidates")
-                        .add(
-                            mapOf(
-                                "candidate" to candidate.sdp,
-                                "mid" to (candidate.sdpMid ?: ""),
-                                "sender" to "client",
-                                "createdAt" to Timestamp.now()
-                            )
-                        )
+                    synchronized(this@OneImageWebRtcClient) {
+                        if (isOfferWritten) {
+                            sendCandidate(id, candidate)
+                        } else {
+                            pendingCandidates.add(candidate)
+                        }
+                    }
                 }
                 override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>?) = Unit
                 override fun onAddStream(stream: org.webrtc.MediaStream?) = Unit
@@ -150,6 +147,12 @@ class OneImageWebRtcClient(
                 "createdAt" to Timestamp.now()
             )
         ).awaitResult()
+
+        synchronized(this@OneImageWebRtcClient) {
+            isOfferWritten = true
+            pendingCandidates.forEach { sendCandidate(id, it) }
+            pendingCandidates.clear()
+        }
 
         answerListener = firestore.collection("webrtc_signals").document(id)
             .addSnapshotListener { snapshot, _ ->
@@ -193,6 +196,24 @@ class OneImageWebRtcClient(
         peerConnection = null
         sessionId = null
         incomingFiles.clear()
+        synchronized(this) {
+            pendingCandidates.clear()
+            isOfferWritten = false
+        }
+    }
+
+    private fun sendCandidate(id: String, candidate: IceCandidate) {
+        firestore.collection("webrtc_signals")
+            .document(id)
+            .collection("candidates")
+            .add(
+                mapOf(
+                    "candidate" to candidate.sdp,
+                    "mid" to (candidate.sdpMid ?: ""),
+                    "sender" to "client",
+                    "createdAt" to Timestamp.now()
+                )
+            )
     }
 
     private fun handleDataChannelMessage(buffer: DataChannel.Buffer) {
@@ -243,29 +264,33 @@ class OneImageWebRtcClient(
         val uri = entry.first
         val info = entry.second
         GlobalScope.launch(Dispatchers.IO) {
-            val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@launch
-            sendJson(
-                channel,
-                JSONObject()
-                    .put("type", "file_start")
-                    .put("fileId", requestedFileId)
-                    .put("filename", info.filename)
-                    .put("size", bytes.size)
-                    .put("mimetype", info.mimeType)
-            )
+            try {
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@launch
+                sendJson(
+                    channel,
+                    JSONObject()
+                        .put("type", "file_start")
+                        .put("fileId", requestedFileId)
+                        .put("filename", info.filename)
+                        .put("size", bytes.size)
+                        .put("mimetype", info.mimeType)
+                )
             var offset = 0
             while (offset < bytes.size) {
                 val end = minOf(offset + WEBRTC_CHUNK_SIZE, bytes.size)
                 channel.send(DataChannel.Buffer(ByteBuffer.wrap(bytes, offset, end - offset), true))
                 offset = end
             }
-            sendJson(
-                channel,
-                JSONObject()
-                    .put("type", "file_end")
-                    .put("fileId", requestedFileId)
-                    .put("filename", info.filename)
-            )
+                sendJson(
+                    channel,
+                    JSONObject()
+                        .put("type", "file_end")
+                        .put("fileId", requestedFileId)
+                        .put("filename", info.filename)
+                )
+            } catch (e: Exception) {
+                onStatus("File transfer failed: ${e.message}")
+            }
         }
     }
 

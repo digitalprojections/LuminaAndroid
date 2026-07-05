@@ -48,6 +48,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.oneimage.android.api.OneImageTask
 import com.oneimage.android.api.OneImageTaskResult
+import com.oneimage.android.ui.shared.WorkflowHistoryList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -172,9 +173,13 @@ fun MeshModelScreen(
                 onReset = viewModel::clearSource
             )
 
-            HistoryPanel(
+            WorkflowHistoryList(
+                title = "Recent Meshes",
+                emptyText = "No mesh history yet.",
                 tasks = state.history,
-                onLoad = viewModel::loadTask,
+                currentTaskId = state.currentTaskId,
+                taskTitle = { "Mesh model" },
+                onOpen = viewModel::loadTask,
                 onRestore = { task -> viewModel.restoreTask(context, clientId, task) },
                 onDelete = { task -> viewModel.deleteTask(clientId, task) },
                 onCancel = { task ->
@@ -555,80 +560,6 @@ private fun OutputPanel(
                             Text("New Mesh")
                         }
                     }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun HistoryPanel(
-    tasks: List<OneImageTask>,
-    onLoad: (OneImageTask) -> Unit,
-    onRestore: (OneImageTask) -> Unit,
-    onDelete: (OneImageTask) -> Unit,
-    onCancel: (OneImageTask) -> Unit
-) {
-    Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Recent Meshes", fontWeight = FontWeight.Bold)
-            }
-            if (tasks.isEmpty()) {
-                Text("No mesh history yet.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                tasks.take(10).forEachIndexed { index, task ->
-                    if (index > 0) HorizontalDivider()
-                    HistoryRow(
-                        task = task,
-                        onLoad = { onLoad(task) },
-                        onRestore = { onRestore(task) },
-                        onDelete = { onDelete(task) },
-                        onCancel = { onCancel(task) }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun HistoryRow(
-    task: OneImageTask,
-    onLoad: () -> Unit,
-    onRestore: () -> Unit,
-    onDelete: () -> Unit,
-    onCancel: () -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Mesh model", fontWeight = FontWeight.SemiBold)
-                Text(
-                    listOf(task.status, task.createdAtText()).filter { it.isNotBlank() }.joinToString(" · "),
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onLoad, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)) {
-                Text("Load")
-            }
-            if (task.status in setOf("pending", "processing", "initializing")) {
-                OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)) {
-                    Icon(Icons.Default.Cancel, contentDescription = null, modifier = Modifier.size(16.dp))
-                }
-            } else if (task.results.any { it.url.startsWith("webrtc://") } || task.useWebRTC) {
-                OutlinedButton(onClick = onRestore, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)) {
-                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                }
-            }
-            if (task.status !in setOf("pending", "processing", "initializing")) {
-                OutlinedButton(onClick = onDelete, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)) {
-                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
                 }
             }
         }

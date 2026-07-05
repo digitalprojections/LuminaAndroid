@@ -117,9 +117,13 @@ object OneImageApi {
     fun getFileInfo(contentResolver: ContentResolver, imageUri: Uri): OneImageFileInfo {
         val mimeType = contentResolver.getType(imageUri) ?: "image/png"
         val filename = getDisplayName(contentResolver, imageUri) ?: "input.png"
-        val size = contentResolver.openAssetFileDescriptor(imageUri, "r")?.use { descriptor ->
-            descriptor.length.takeIf { it > 0 }
-        } ?: contentResolver.openInputStream(imageUri)?.use { it.readBytes().size.toLong() } ?: 0L
+        val size = try {
+            contentResolver.openAssetFileDescriptor(imageUri, "r")?.use { descriptor ->
+                descriptor.length.takeIf { it > 0 }
+            } ?: contentResolver.openInputStream(imageUri)?.use { it.readBytes().size.toLong() } ?: 0L
+        } catch (e: Exception) {
+            0L
+        }
         return OneImageFileInfo(filename = filename, mimeType = mimeType, size = size)
     }
 

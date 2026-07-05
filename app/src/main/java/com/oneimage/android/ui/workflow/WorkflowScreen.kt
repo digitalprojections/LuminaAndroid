@@ -3,10 +3,10 @@ package com.oneimage.android.ui.workflow
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
-import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,6 +54,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -63,14 +64,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import com.oneimage.android.ui.theme.PrimaryGradient
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.oneimage.android.BuildConfig
 import com.oneimage.android.api.KeyframeWorkflowInput
 import com.oneimage.android.api.OneImageApi
@@ -78,6 +82,11 @@ import com.oneimage.android.api.OneImageFileInfo
 import com.oneimage.android.api.OneImageTask
 import com.oneimage.android.api.OneImageTaskResult
 import com.oneimage.android.api.OneImageWebRtcClient
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
+import com.oneimage.android.ui.shared.WorkflowHistoryList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -86,6 +95,7 @@ import java.net.URI
 import java.net.URL
 
 private const val DEFAULT_IMPORTANT_DESCRIPTION = "describe the image in smallest details, describe it as a high definition game asset style image asset. Do not describe as pixel art, because it is high definition"
+private const val TASK_HISTORY_LIMIT = 250L
 
 enum class WorkflowKind {
     CharacterReplacement,
@@ -214,11 +224,9 @@ object WorkflowSpecs {
 fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val firestore = remember { FirebaseFirestore.getInstance() }
     val baseUrl = BuildConfig.ONEIMAGE_API_BASE_URL.ifBlank { "https://genstudio.web.app/" }
-    val clientId = remember {
-        val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "device"
-        "android-$androidId"
-    }
+    val clientId = remember { FirebaseAuth.getInstance().currentUser?.uid.orEmpty() }
 
     val selectedUris = remember(spec.kind) { mutableStateMapOf<String, Uri>() }
     val fileInfos = remember(spec.kind) { mutableStateMapOf<String, OneImageFileInfo>() }
@@ -230,6 +238,7 @@ fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var currentTask by remember { mutableStateOf<OneImageTask?>(null) }
     var results by remember { mutableStateOf<List<OneImageTaskResult>>(emptyList()) }
+    var history by remember(spec.kind) { mutableStateOf<List<OneImageTask>>(emptyList()) }
     var transport by remember { mutableStateOf<OneImageWebRtcClient?>(null) }
 
     val surfaceGradient = Brush.verticalGradient(
@@ -241,18 +250,63 @@ fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
         pendingSlot = null
         if (uri != null && slot != null) {
             scope.launch {
-                selectedUris[slot.id] = uri
-                fileInfos[slot.id] = OneImageApi.getFileInfo(context.contentResolver, uri)
-                if (slot.mime.startsWith("video") || slot.mime.startsWith("audio")) {
-                    durations[slot.id] = readMediaDurationSeconds(context, uri)
+                try {
+                    selectedUris[slot.id] = uri
+                    fileInfos[slot.id] = OneImageApi.getFileInfo(context.contentResolver, uri)
+                    if (slot.mime.startsWith("video") || slot.mime.startsWith("audio")) {
+                        durations[slot.id] = readMediaDurationSeconds(context, uri)
+                    }
+                    error = null
+                } catch (e: Exception) {
+                    error = "Permission error: ${e.message}"
                 }
-                error = null
             }
         }
     }
 
     LaunchedEffect(spec.kind) {
         transport?.close()
+    }
+
+    DisposableEffect(spec.taskType, clientId) {
+        if (clientId.isBlank()) {
+            history = emptyList()
+            onDispose { }
+        } else {
+            val listener = firestore.collection("tasks")
+                .whereEqualTo("clientId", clientId)
+                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .limit(TASK_HISTORY_LIMIT)
+                .addSnapshotListener { snapshot, listenerError ->
+                    if (listenerError != null || snapshot == null) return@addSnapshotListener
+
+                    val tasks = snapshot.documents
+                        .mapNotNull(::workflowTaskFromDocument)
+                        .filter { it.type == spec.taskType }
+
+                    history = tasks
+
+                    val openTaskId = currentTask?.id
+                    val refreshedTask = openTaskId?.let { taskId -> tasks.firstOrNull { it.id == taskId } }
+                    if (refreshedTask != null) {
+                        currentTask = refreshedTask
+                        results = mergeResults(results, refreshedTask.results)
+                        status = refreshedTask.statusDetails ?: refreshedTask.status
+                        error = if (refreshedTask.status == "failed") refreshedTask.error ?: "Workflow failed." else error
+                        isBusy = refreshedTask.status in setOf("pending", "processing", "initializing")
+                    } else if (openTaskId == null) {
+                        tasks.firstOrNull { it.status in setOf("pending", "processing", "initializing") }?.let { activeTask ->
+                            currentTask = activeTask
+                            results = mergeResults(results, activeTask.results)
+                            status = activeTask.statusDetails ?: activeTask.status
+                            error = if (activeTask.status == "failed") activeTask.error ?: "Workflow failed." else error
+                            isBusy = true
+                        }
+                    }
+                }
+
+            onDispose { listener.remove() }
+        }
     }
 
     val ready = spec.fileSlots.all { fileInfos[it.id] != null } && spec.textSlots.all { slot ->
@@ -325,6 +379,11 @@ fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
             Button(
                 onClick = {
                     scope.launch {
+                        if (clientId.isBlank()) {
+                            error = "Please sign in again."
+                            status = "Sign-in required"
+                            return@launch
+                        }
                         isBusy = true
                         error = null
                         results = emptyList()
@@ -420,11 +479,126 @@ fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
             ResultsCard(results = results, onRestore = {
                 val task = currentTask ?: return@ResultsCard
                 scope.launch {
-                    val openTransport = transport?.takeIf { it.isOpen() } ?: return@launch
-                    openTransport.requestTaskResults(task.id, task.type.ifBlank { spec.taskType })
+                    if (clientId.isBlank()) {
+                        error = "Please sign in again."
+                        status = "Sign-in required"
+                        return@launch
+                    }
+
+                    val openTransport = transport?.takeIf { it.isOpen() } ?: run {
+                        val newTransport = OneImageWebRtcClient(
+                            context = context,
+                            clientId = clientId,
+                            onStatus = { status = it },
+                            onFileReceived = { file ->
+                                val result = OneImageTaskResult(
+                                    label = file.label ?: file.filename,
+                                    url = file.url,
+                                    filename = file.filename,
+                                    size = file.size
+                                )
+                                results = mergeResults(results, listOf(result))
+                            }
+                        )
+                        transport?.close()
+                        transport = newTransport
+                        if (!newTransport.connect()) {
+                            error = "WebRTC direct transfer did not connect to the local agent."
+                            status = "Restore failed"
+                            return@launch
+                        }
+                        newTransport
+                    }
+
+                    val sent = openTransport.requestTaskResults(task.id, task.type.ifBlank { spec.taskType })
+                    if (!sent) {
+                        error = "Restore request could not be sent."
+                        status = "Restore failed"
+                        return@launch
+                    }
                     status = "Restoring results..."
                 }
             })
+
+            WorkflowHistoryList(
+                title = "History",
+                emptyText = "No ${spec.title.lowercase()} history yet.",
+                tasks = history,
+                currentTaskId = currentTask?.id,
+                taskTitle = { task -> historyTaskTitle(spec, task) },
+                onOpen = { task ->
+                    currentTask = task
+                    results = mergeResults(emptyList(), task.results)
+                    status = task.statusDetails ?: task.status
+                    error = if (task.status == "failed") task.error ?: "Workflow failed." else null
+                    isBusy = task.status in setOf("pending", "processing", "initializing")
+                },
+                onRestore = { task ->
+                    scope.launch {
+                        if (clientId.isBlank()) {
+                            error = "Please sign in again."
+                            status = "Sign-in required"
+                            return@launch
+                        }
+
+                        currentTask = task
+                        results = mergeResults(emptyList(), task.results)
+                        error = null
+
+                        val openTransport = transport?.takeIf { it.isOpen() } ?: run {
+                            val newTransport = OneImageWebRtcClient(
+                                context = context,
+                                clientId = clientId,
+                                onStatus = { status = it },
+                                onFileReceived = { file ->
+                                    val result = OneImageTaskResult(
+                                        label = file.label ?: file.filename,
+                                        url = file.url,
+                                        filename = file.filename,
+                                        size = file.size
+                                    )
+                                    results = mergeResults(results, listOf(result))
+                                }
+                            )
+                            transport?.close()
+                            transport = newTransport
+                            if (!newTransport.connect()) {
+                                error = "WebRTC direct transfer did not connect to the local agent."
+                                status = "Restore failed"
+                                return@launch
+                            }
+                            newTransport
+                        }
+
+                        val sent = openTransport.requestTaskResults(task.id, task.type.ifBlank { spec.taskType })
+                        if (!sent) {
+                            error = "Restore request could not be sent."
+                            status = "Restore failed"
+                            return@launch
+                        }
+                        status = "Restoring results..."
+                    }
+                },
+                onDelete = { task ->
+                    scope.launch {
+                        runCatching { OneImageApi.deleteTask(baseUrl, clientId, task.id) }
+                            .onFailure { deleteError -> error = deleteError.message ?: "Could not delete task." }
+                        if (currentTask?.id == task.id) {
+                            currentTask = null
+                            results = emptyList()
+                            status = "Ready"
+                            isBusy = false
+                        }
+                    }
+                },
+                onCancel = { task ->
+                    scope.launch {
+                        currentTask = task
+                        runCatching { OneImageApi.cancelTask(baseUrl, clientId, task.id) }
+                            .onFailure { cancelError -> error = cancelError.message ?: "Could not cancel task." }
+                    }
+                }
+            )
         }
     }
     }
@@ -476,9 +650,28 @@ private fun ResultsCard(results: List<OneImageTaskResult>, onRestore: () -> Unit
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Results", fontWeight = FontWeight.Bold)
             results.forEach { result ->
+                val renderableImage = isRenderableImageResult(result)
                 Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(result.label.ifBlank { result.filename.ifBlank { "Result" } }, fontWeight = FontWeight.SemiBold)
+                        if (renderableImage) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(220.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.surface),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                AsyncImage(
+                                    model = result.url,
+                                    contentDescription = result.label.ifBlank { result.filename.ifBlank { "Result image" } },
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                        }
                         Text(result.url, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             if (result.url.startsWith("webrtc://")) {
@@ -488,11 +681,11 @@ private fun ResultsCard(results: List<OneImageTaskResult>, onRestore: () -> Unit
                                     Text("Restore")
                                 }
                             } else {
-                                TextButton(onClick = { }) {
-                                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Ready")
-                                }
+                                Text(
+                                    text = if (renderableImage) "Shown below" else "Saved on device",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                     }
@@ -544,6 +737,66 @@ private fun progressFraction(task: OneImageTask): Float {
     return (task.progressValue.coerceAtLeast(0).toFloat() / max.toFloat()).coerceIn(0f, 1f)
 }
 
+private fun isRenderableImageResult(result: OneImageTaskResult): Boolean {
+    if (result.url.startsWith("webrtc://")) return false
+    val candidate = result.filename.ifBlank { result.url }.lowercase()
+    return IMAGE_RESULT_EXTENSIONS.any { candidate.endsWith(it) }
+}
+
+private val IMAGE_RESULT_EXTENSIONS = setOf(
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".gif"
+)
+
+private fun historyTaskTitle(spec: WorkflowSpec, task: OneImageTask): String = when (spec.kind) {
+    WorkflowKind.MeshModel -> "Game Mesh"
+    WorkflowKind.VideoDescription -> "Video Description"
+    else -> task.prompt?.ifBlank { spec.title } ?: spec.title
+}
+
+private fun workflowTaskFromDocument(document: DocumentSnapshot): OneImageTask? {
+    val data = document.data ?: return null
+    val results = (data["results"] as? List<*>)?.mapNotNull { item ->
+        val result = item as? Map<*, *> ?: return@mapNotNull null
+        val url = result["url"]?.toString().orEmpty()
+        if (url.isBlank()) return@mapNotNull null
+        OneImageTaskResult(
+            label = result["label"]?.toString().orEmpty().ifBlank { "Result" },
+            url = url,
+            filename = result["filename"]?.toString().orEmpty(),
+            size = (result["size"] as? Number)?.toLong() ?: 0L
+        )
+    }.orEmpty()
+    val params = data["params"] as? Map<*, *>
+
+    return OneImageTask(
+        id = document.id,
+        type = data["type"]?.toString().orEmpty(),
+        status = data["status"]?.toString().orEmpty().ifBlank { "pending" },
+        statusDetails = data["status_details"]?.toString()?.ifBlank { null },
+        error = data["error"]?.toString()?.ifBlank { null },
+        progressValue = (data["progress_value"] as? Number)?.toInt() ?: 0,
+        progressMax = (data["progress_max"] as? Number)?.toInt() ?: 0,
+        prompt = params?.get("prompt")?.toString()?.ifBlank { data["prompt"]?.toString()?.ifBlank { null } }
+            ?: data["prompt"]?.toString()?.ifBlank { null },
+        isLightning = (params?.get("isLightning") as? Boolean) ?: true,
+        createdAtMs = firestoreMillis(data["createdAt"]).takeIf { it > 0L } ?: ((data["createdAtMs"] as? Number)?.toLong() ?: 0L),
+        useWebRTC = data["useWebRTC"] as? Boolean ?: false,
+        resultRestoreUnavailable = data["resultRestoreUnavailable"] as? Boolean ?: false,
+        results = results
+    )
+}
+
+private fun firestoreMillis(value: Any?): Long = when (value) {
+    is com.google.firebase.Timestamp -> value.toDate().time
+    is java.util.Date -> value.time
+    is Number -> value.toLong()
+    else -> 0L
+}
+
 private suspend fun readMediaDurationSeconds(context: Context, uri: Uri): Float = withContext(Dispatchers.IO) {
     runCatching {
         val retriever = MediaMetadataRetriever()
@@ -556,8 +809,3 @@ private suspend fun readMediaDurationSeconds(context: Context, uri: Uri): Float 
         }
     }.getOrDefault(0f)
 }
-
-
-
-
-

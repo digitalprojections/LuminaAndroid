@@ -57,6 +57,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.oneimage.android.api.OneImageTask
 import com.oneimage.android.api.OneImageTaskResult
+import com.oneimage.android.ui.shared.WorkflowHistoryList
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -261,9 +262,13 @@ fun LipSyncScreen(
             }
 
             OutputManifest(state, onSave = { result -> viewModel.saveResult(context, result) })
-            HistoryPanel(
+            WorkflowHistoryList(
+                title = "History",
+                emptyText = "No lip sync history yet.",
                 tasks = state.history,
-                onLoad = viewModel::loadTask,
+                currentTaskId = state.currentTaskId,
+                taskTitle = { task -> task.prompt?.ifBlank { "Lip sync" } ?: "Lip sync" },
+                onOpen = viewModel::loadTask,
                 onRestore = { task -> viewModel.restoreTask(context, clientId, task) },
                 onDelete = { task -> viewModel.deleteTask(clientId, task) },
                 onCancel = { task ->
@@ -316,37 +321,4 @@ private fun OutputManifest(state: LipSyncUiState, onSave: (OneImageTaskResult) -
         }
     }
 }
-
-@Composable
-private fun HistoryPanel(
-    tasks: List<OneImageTask>,
-    onLoad: (OneImageTask) -> Unit,
-    onRestore: (OneImageTask) -> Unit,
-    onDelete: (OneImageTask) -> Unit,
-    onCancel: (OneImageTask) -> Unit
-) {
-    if (tasks.isEmpty()) return
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("History", fontWeight = FontWeight.SemiBold)
-        tasks.forEach { task ->
-            Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                        Text(task.prompt ?: "Lip sync", fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(task.status, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = { onLoad(task) }) { Text("Open") }
-                        TextButton(onClick = { onRestore(task) }) { Text("Restore") }
-                        TextButton(onClick = { onDelete(task) }) { Text("Delete") }
-                        TextButton(onClick = { onCancel(task) }) { Text("Cancel") }
-                    }
-                }
-            }
-        }
-    }
-}
-
-
-
 
