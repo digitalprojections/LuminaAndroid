@@ -46,5 +46,8 @@ sealed class Screen {
     object Settings : Screen()
 
     @Serializable
+    object Support : Screen()
+
+    @Serializable
     object Legal : Screen()
 }

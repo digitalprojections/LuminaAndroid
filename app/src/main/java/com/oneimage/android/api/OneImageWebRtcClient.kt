@@ -5,11 +5,13 @@ import android.net.Uri
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
-import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.webrtc.DataChannel
@@ -53,6 +55,8 @@ class OneImageWebRtcClient(
     private val inputFiles = mutableMapOf<String, Pair<Uri, OneImageFileInfo>>()
     private val incomingFiles = mutableMapOf<String, IncomingFile>()
     private val pendingCandidates = mutableListOf<IceCandidate>()
+    private val sendScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val sendMutex = Mutex()
     private var isOfferWritten = false
     init {
         PeerConnectionFactory.initialize(
@@ -264,37 +268,38 @@ class OneImageWebRtcClient(
         }
     }
 
-    @OptIn(DelicateCoroutinesApi::class)
     private fun sendSelectedFile(requestedFileId: String) {
         val channel = dataChannel ?: return
         val entry = inputFiles[requestedFileId] ?: inputFiles.values.firstOrNull() ?: return
         val uri = entry.first
         val info = entry.second
-        GlobalScope.launch(Dispatchers.IO) {
+        sendScope.launch {
             try {
-                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@launch
-                sendJson(
-                    channel,
-                    JSONObject()
-                        .put("type", "file_start")
-                        .put("fileId", requestedFileId)
-                        .put("filename", info.filename)
-                        .put("size", bytes.size)
-                        .put("mimetype", info.mimeType)
-                )
-            var offset = 0
-            while (offset < bytes.size) {
-                val end = minOf(offset + WEBRTC_CHUNK_SIZE, bytes.size)
-                channel.send(DataChannel.Buffer(ByteBuffer.wrap(bytes, offset, end - offset), true))
-                offset = end
-            }
-                sendJson(
-                    channel,
-                    JSONObject()
-                        .put("type", "file_end")
-                        .put("fileId", requestedFileId)
-                        .put("filename", info.filename)
-                )
+                sendMutex.withLock {
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@withLock
+                    sendJson(
+                        channel,
+                        JSONObject()
+                            .put("type", "file_start")
+                            .put("fileId", requestedFileId)
+                            .put("filename", info.filename)
+                            .put("size", bytes.size)
+                            .put("mimetype", info.mimeType)
+                    )
+                    var offset = 0
+                    while (offset < bytes.size) {
+                        val end = minOf(offset + WEBRTC_CHUNK_SIZE, bytes.size)
+                        channel.send(DataChannel.Buffer(ByteBuffer.wrap(bytes, offset, end - offset), true))
+                        offset = end
+                    }
+                    sendJson(
+                        channel,
+                        JSONObject()
+                            .put("type", "file_end")
+                            .put("fileId", requestedFileId)
+                            .put("filename", info.filename)
+                    )
+                }
             } catch (e: Exception) {
                 onStatus("File transfer failed: ${e.message}")
             }

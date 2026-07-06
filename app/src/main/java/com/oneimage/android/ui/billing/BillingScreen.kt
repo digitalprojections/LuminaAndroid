@@ -14,6 +14,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -23,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.oneimage.android.ui.account.AccountViewModel
+import com.oneimage.android.ui.shared.IndependentServiceNotice
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,6 +39,7 @@ fun BillingScreen(
     val isAdmin = profile?.hasUnlimitedAccess == true
     val currentPlan = profile?.planLabel ?: "none"
     val currentStatus = profile?.statusLabel ?: "unpaid"
+    var serviceModelAccepted by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         accountViewModel.loadProfile()
@@ -174,10 +179,17 @@ fun BillingScreen(
             }
 
             item {
+                IndependentServiceNotice(
+                    checked = serviceModelAccepted,
+                    onCheckedChange = { serviceModelAccepted = it }
+                )
+            }
+
+            item {
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
                     onClick = { /* Stripe flow */ },
-                    enabled = !isAdmin,
+                    enabled = !isAdmin && serviceModelAccepted,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(64.dp),
@@ -189,7 +201,11 @@ fun BillingScreen(
                     elevation = ButtonDefaults.buttonElevation(defaultElevation = 12.dp)
                 ) {
                     Text(
-                        if (isAdmin) "Admin Access Active" else "Upgrade Now",
+                        when {
+                            isAdmin -> "Admin Access Active"
+                            !serviceModelAccepted -> "Confirm Service Model"
+                            else -> "Upgrade Now"
+                        },
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp
                     )

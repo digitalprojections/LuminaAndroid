@@ -1,4 +1,11 @@
 <resources>
-    <string name="app_name">Workflow Studio</string>
+    <string name="app_name">OneStudio</string>
+    <string name="independent_service_title">Service Model</string>
+    <string name="independent_service_body">OneStudio is an independent creative service. Image, video, and 3D generation use metered computing resources, storage, and maintenance. Credits are required to run generation tasks; signing in does not start a purchase or subscription.</string>
+    <string name="independent_service_checkbox">I acknowledge.</string>
+    <string name="terms_acceptance_checkbox">I agree to the Terms of Use.</string>
+    <string name="privacy_acceptance_checkbox">I have read the Privacy Policy.</string>
+    <string name="privacy_policy_summary">OneStudio respects your privacy. We use your data strictly to provide image, video, and asset generation features through the service.\n\nWe do not sell your personal information to third parties. Subscription payments are handled securely via Stripe.</string>
+    <string name="terms_of_use_summary">By using OneStudio, you agree not to use the generation services to create harmful, illegal, or NSFW content. Monthly subscriptions are billed automatically via Stripe and can be cancelled at any time in the Billing section.</string>
 </resources>
 

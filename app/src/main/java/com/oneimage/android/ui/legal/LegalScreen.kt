@@ -7,9 +7,12 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.oneimage.android.R
+import com.oneimage.android.ui.shared.IndependentServiceNotice
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,10 +36,14 @@ fun LegalScreen(onBack: () -> Unit) {
                 .padding(16.dp)
         ) {
             item {
+                IndependentServiceNotice()
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+            item {
                 Text(text = "Privacy Policy", fontWeight = FontWeight.Bold, fontSize = 20.sp)
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Workflow Studio respects your privacy. We use your data strictly to provide image, video, and asset generation features through the service.\n\nWe do not sell your personal information to third parties. Subscription payments are handled securely via Stripe.",
+                    text = stringResource(R.string.privacy_policy_summary),
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -46,7 +53,7 @@ fun LegalScreen(onBack: () -> Unit) {
                 Text(text = "Terms of Use", fontWeight = FontWeight.Bold, fontSize = 20.sp)
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "By using this app, you agree not to use the generation services to create harmful, illegal, or NSFW content. Monthly subscriptions are billed automatically via Stripe and can be cancelled at any time in the Billing section.",
+                    text = stringResource(R.string.terms_of_use_summary),
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

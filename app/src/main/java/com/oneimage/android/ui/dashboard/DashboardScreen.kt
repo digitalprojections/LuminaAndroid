@@ -48,7 +48,8 @@ fun DashboardScreen(
         DashboardItem("Character Replacement", Icons.Default.FaceRetouchingNatural, Screen.CharacterReplacement, "Change a character in a clip"),
         DashboardItem("Story Images", Icons.Default.AutoStories, Screen.StoryImages, "Images for story paragraphs"),
         DashboardItem("Game Mesh", Icons.Default.ViewInAr, Screen.MeshModel, "Draft 3D model from an image"),
-        DashboardItem("Game Asset Upscaler", Icons.Default.Hd, Screen.GameAssetUpscaler, "Clean, larger game art")
+        DashboardItem("Game Asset Upscaler", Icons.Default.Hd, Screen.GameAssetUpscaler, "Clean, larger game art"),
+        DashboardItem("Support", Icons.Default.SupportAgent, Screen.Support, "Search the QA database")
     )
 
     Scaffold(
@@ -105,9 +106,9 @@ fun DashboardScreen(
                 )
                 NavigationBarItem(
                     selected = false,
-                    onClick = { navController.navigate(Screen.ImageGen) },
-                    icon = { Icon(Icons.Default.History, null) },
-                    label = { Text("Recent", fontSize = 12.sp, fontWeight = FontWeight.Medium) }
+                    onClick = { navController.navigate(Screen.Support) },
+                    icon = { Icon(Icons.Default.SupportAgent, null) },
+                    label = { Text("Support", fontSize = 12.sp, fontWeight = FontWeight.Medium) }
                 )
                 NavigationBarItem(
                     selected = false,

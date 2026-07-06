@@ -21,6 +21,7 @@ import com.oneimage.android.ui.legal.LegalScreen
 import com.oneimage.android.ui.lipsync.LipSyncScreen
 import com.oneimage.android.ui.meshmodel.MeshModelScreen
 import com.oneimage.android.ui.settings.SettingsScreen
+import com.oneimage.android.ui.support.SupportScreen
 import com.oneimage.android.ui.theme.LuminaTheme
 import com.oneimage.android.ui.videogen.VideoGenScreen
 import com.oneimage.android.ui.workflow.WorkflowScreen
@@ -55,6 +56,7 @@ class MainActivity : ComponentActivity() {
                         composable<Screen.Keyframes> { WorkflowScreen(WorkflowSpecs.Keyframes) { goBackToDashboard(navController) } }
                         composable<Screen.DataSync> { DataSyncScreen(onBack = { navController.popBackStack() }) }
                         composable<Screen.Billing> { BillingScreen(onBack = { navController.popBackStack() }) }
+                        composable<Screen.Support> { SupportScreen(onBack = { navController.popBackStack() }) }
                         composable<Screen.Settings> {
                             SettingsScreen(
                                 onBack = { navController.popBackStack() },

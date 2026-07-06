@@ -5,8 +5,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material3.*
@@ -14,10 +16,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -28,6 +34,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.oneimage.android.R
 import androidx.compose.ui.graphics.Brush
+import com.oneimage.android.ui.shared.IndependentServiceNotice
 import com.oneimage.android.ui.theme.PrimaryGradient
 
 @Composable
@@ -38,6 +45,10 @@ fun LoginScreen(
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     val isLoading = uiState is AuthUiState.Loading
+    var serviceModelAccepted by remember { mutableStateOf(false) }
+    var termsAccepted by remember { mutableStateOf(false) }
+    var privacyAccepted by remember { mutableStateOf(false) }
+    val canSignIn = serviceModelAccepted && termsAccepted && privacyAccepted
 
     LaunchedEffect(uiState) {
         if (uiState is AuthUiState.Authenticated) {
@@ -76,8 +87,10 @@ fun LoginScreen(
     }
 
     val startGoogleSignIn = {
-        googleSignInClient.signOut().addOnCompleteListener {
-            googleSignInLauncher.launch(googleSignInClient.signInIntent)
+        if (canSignIn) {
+            googleSignInClient.signOut().addOnCompleteListener {
+                googleSignInLauncher.launch(googleSignInClient.signInIntent)
+            }
         }
     }
 
@@ -90,6 +103,7 @@ fun LoginScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .systemBarsPadding()
+                .verticalScroll(rememberScrollState())
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
@@ -111,7 +125,7 @@ fun LoginScreen(
             Spacer(modifier = Modifier.height(32.dp))
 
             Text(
-                text = "Workflow Studio",
+                text = stringResource(R.string.app_name),
                 style = MaterialTheme.typography.displayLarge,
                 color = MaterialTheme.colorScheme.onBackground,
                 textAlign = TextAlign.Center
@@ -127,11 +141,32 @@ fun LoginScreen(
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
 
-            Spacer(modifier = Modifier.height(64.dp))
+            Spacer(modifier = Modifier.height(32.dp))
+
+            IndependentServiceNotice(
+                checked = serviceModelAccepted,
+                onCheckedChange = { serviceModelAccepted = it }
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            LegalAcceptanceRow(
+                checked = termsAccepted,
+                onCheckedChange = { termsAccepted = it },
+                text = stringResource(R.string.terms_acceptance_checkbox)
+            )
+
+            LegalAcceptanceRow(
+                checked = privacyAccepted,
+                onCheckedChange = { privacyAccepted = it },
+                text = stringResource(R.string.privacy_acceptance_checkbox)
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
 
             Button(
                 onClick = { startGoogleSignIn() },
-                enabled = !isLoading,
+                enabled = !isLoading && canSignIn,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(60.dp),
@@ -160,7 +195,7 @@ fun LoginScreen(
 
             TextButton(
                 onClick = { startGoogleSignIn() },
-                enabled = !isLoading,
+                enabled = !isLoading && canSignIn,
                 modifier = Modifier.height(56.dp)
             ) {
                 Text(
@@ -206,5 +241,30 @@ fun LoginScreen(
             }
             Spacer(modifier = Modifier.height(16.dp))
         }
+    }
+}
+
+@Composable
+private fun LegalAcceptanceRow(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    text: String
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top
+    ) {
+        Checkbox(
+            checked = checked,
+            onCheckedChange = onCheckedChange
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = text,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 13.sp,
+            lineHeight = 18.sp,
+            modifier = Modifier.padding(top = 12.dp)
+        )
     }
 }
