@@ -3,6 +3,7 @@ package com.oneimage.android.ui.support
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -27,11 +28,14 @@ import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -41,6 +45,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -117,26 +124,35 @@ fun SupportScreen(
 
             if (state.workflowFilters.size > 1) {
                 item {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
                             "Workflow",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            state.workflowFilters.forEach { workflow ->
-                                FilterChip(
-                                    selected = state.selectedWorkflow == workflow,
-                                    onClick = { viewModel.selectWorkflow(workflow) },
-                                    label = { Text(workflow) }
-                                )
-                            }
-                        }
+                        WorkflowFilterMenu(
+                            selected = state.selectedWorkflow,
+                            workflows = state.workflowFilters,
+                            onSelected = viewModel::selectWorkflow
+                        )
                     }
+                }
+            }
+
+            if (state.selectedWorkflow != ALL_WORKFLOWS) {
+                item {
+                    AssistChip(
+                        onClick = { viewModel.selectWorkflow(ALL_WORKFLOWS) },
+                        label = { Text("Workflow: ${state.selectedWorkflow}  ×") },
+                        leadingIcon = {
+                            Icon(Icons.Default.QuestionAnswer, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
+                    )
                 }
             }
 
@@ -159,6 +175,31 @@ fun SupportScreen(
                 items(state.answers, key = { it.id }) { answer ->
                     SupportAnswerCard(answer)
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkflowFilterMenu(
+    selected: String,
+    workflows: List<String>,
+    onSelected: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        OutlinedButton(onClick = { expanded = true }) {
+            Text(selected, maxLines = 1)
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            workflows.forEach { workflow ->
+                DropdownMenuItem(
+                    text = { Text(workflow) },
+                    onClick = {
+                        expanded = false
+                        onSelected(workflow)
+                    }
+                )
             }
         }
     }
