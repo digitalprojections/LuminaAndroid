@@ -620,7 +620,7 @@ private fun SharedHistoryControlRow(
             ) {
                 Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Save", fontSize = 12.sp)
+                Text("Save folder", fontSize = 12.sp)
             }
         }
 

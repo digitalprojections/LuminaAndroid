@@ -134,8 +134,10 @@ fun VideoGenScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = onHistory) {
-                        Icon(Icons.Default.History, contentDescription = "History")
+                    TextButton(onClick = onHistory) {
+                        Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("History")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
@@ -544,7 +546,7 @@ private fun AngleSlot(
                     TextButton(onClick = { onSave(result) }) {
                         Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Save")
+                        Text("Save to device")
                     }
                 }
             }

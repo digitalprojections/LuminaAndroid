@@ -135,8 +135,10 @@ fun LipSyncScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = onHistory) {
-                        Icon(Icons.Default.History, contentDescription = "History")
+                    TextButton(onClick = onHistory) {
+                        Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("History")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
@@ -532,7 +534,7 @@ private fun OutputManifest(state: LipSyncUiState, onSave: (OneImageTaskResult) -
                             Spacer(modifier = Modifier.weight(1f))
                         }
                         TextButton(onClick = { onSave(result) }) {
-                            Text("Save")
+                            Text("Save to device")
                         }
                     }
                 }

@@ -15,10 +15,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Router
-import androidx.compose.material.icons.filled.SettingsEthernet
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -82,7 +82,7 @@ fun DataSyncScreen(onBack: () -> Unit) {
                                 shape = RoundedCornerShape(14.dp)
                             ) {
                                 Icon(
-                                    Icons.Default.CloudSync,
+                                    Icons.Default.CloudDone,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onPrimaryContainer,
                                     modifier = Modifier.padding(10.dp).size(24.dp)
@@ -108,7 +108,7 @@ fun DataSyncScreen(onBack: () -> Unit) {
 
             item {
                 DiagnosticTip(
-                    icon = Icons.Default.Router,
+                    icon = Icons.Default.SupportAgent,
                     title = "Local agent",
                     body = "Keep the local agent running on the same network before starting workflows that use direct transfer."
                 )
@@ -116,7 +116,7 @@ fun DataSyncScreen(onBack: () -> Unit) {
 
             item {
                 DiagnosticTip(
-                    icon = Icons.Default.SettingsEthernet,
+                    icon = Icons.Default.Settings,
                     title = "Restore assets",
                     body = "Use each workflow's History page to restore missing local results, then save them to a folder on the device."
                 )
