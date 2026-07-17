@@ -209,6 +209,34 @@ object OneImageApi {
         }
     }
 
+    suspend fun submitSingleI2VWorkflow(
+        baseUrl: String,
+        clientId: String,
+        prompt: String,
+        imageFileInfo: OneImageFileInfo,
+        duration: Int,
+        resolutionMode: String,
+        aspectRatio: String,
+        inputWidth: Int,
+        inputHeight: Int
+    ): String = postGeneration(
+        baseUrl = baseUrl,
+        path = "/api/single-i2v/generate",
+        payload = JSONObject()
+            .put("clientId", clientId)
+            .put("prompt", prompt)
+            .put("seed", 0)
+            .put("duration", duration)
+            .put("resolutionMode", resolutionMode)
+            .put("aspectRatio", aspectRatio)
+            .put("inputWidth", inputWidth)
+            .put("inputHeight", inputHeight)
+            .put("inputImageName", imageFileInfo.filename)
+            .put("inputImageMimetype", imageFileInfo.mimeType)
+            .put("inputImageSize", imageFileInfo.size),
+        fallbackMessage = "Single I2V generation failed to start."
+    )
+
     suspend fun submitLipSyncWorkflow(
         baseUrl: String,
         clientId: String,
@@ -342,23 +370,6 @@ object OneImageApi {
             .put("inputImageMimetype", imageFileInfo.mimeType)
             .put("inputImageSize", imageFileInfo.size),
         fallbackMessage = "Game asset upscaler failed to start."
-    )
-
-    suspend fun submitVideoDescriptionWorkflow(
-        baseUrl: String,
-        clientId: String,
-        videoFileInfo: OneImageFileInfo,
-        duration: Float
-    ): String = postGeneration(
-        baseUrl = baseUrl,
-        path = "/api/video-description/generate",
-        payload = JSONObject()
-            .put("clientId", clientId)
-            .put("inputName", videoFileInfo.filename)
-            .put("inputMimetype", videoFileInfo.mimeType)
-            .put("inputSize", videoFileInfo.size)
-            .put("duration", duration),
-        fallbackMessage = "Video description failed to start."
     )
 
     suspend fun submitKeyframesWorkflow(

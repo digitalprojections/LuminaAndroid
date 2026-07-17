@@ -2,6 +2,7 @@ package com.oneimage.android.api
 
 import android.content.Context
 import android.net.Uri
+import android.os.SystemClock
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
@@ -46,6 +47,7 @@ class OneImageWebRtcClient(
     private val onStatus: (String) -> Unit,
     private val onFileReceived: (WebRtcReceivedFile) -> Unit
 ) {
+    private val transferOwnerId = UUID.randomUUID().toString()
     private val firestore = FirebaseFirestore.getInstance()
     private var peerConnection: PeerConnection? = null
     private var dataChannel: DataChannel? = null
@@ -201,6 +203,7 @@ class OneImageWebRtcClient(
         peerConnection = null
         sessionId = null
         incomingFiles.clear()
+        WebRtcTransferProgressStore.clearOwner(transferOwnerId)
         synchronized(this) {
             pendingCandidates.clear()
             isOfferWritten = false
@@ -245,16 +248,21 @@ class OneImageWebRtcClient(
             "file_start" -> {
                 val fileId = json.getString("fileId")
                 val wireSize = json.optLong("size", 0L)
+                val filename = json.optString("filename", "result")
+                val taskId = json.optString("taskId").ifBlank { null }
+                val nowMs = SystemClock.elapsedRealtime()
                 incomingFiles[fileId] = IncomingFile(
                     fileId = fileId,
-                    filename = json.optString("filename", "result"),
+                    filename = filename,
                     mimeType = json.optString("mimetype", "application/octet-stream"),
                     size = wireSize,
                     originalSize = json.optLong("originalSize", wireSize),
-                    taskId = json.optString("taskId").ifBlank { null },
+                    taskId = taskId,
                     label = json.optString("label").ifBlank { null },
-                    checksum = json.optString("checksum").ifBlank { null }
+                    checksum = json.optString("checksum").ifBlank { null },
+                    lastProgressAtMs = nowMs
                 )
+                WebRtcTransferProgressStore.start(transferOwnerId, fileId, filename, wireSize, taskId, nowMs)
             }
             "file_end" -> {
                 val fileId = json.optString("fileId")
@@ -315,6 +323,13 @@ class OneImageWebRtcClient(
         val framed = parseFramedBinary(bytes)
         if (framed?.error != null) {
             onStatus(framed.error)
+            WebRtcTransferProgressStore.fail(
+                transferOwnerId,
+                framed.fileId,
+                framed.error,
+                SystemClock.elapsedRealtime()
+            )
+            incomingFiles.remove(framed.fileId)
             return
         }
         val fileId = framed?.fileId ?: incomingFiles.keys.lastOrNull() ?: return
@@ -327,8 +342,10 @@ class OneImageWebRtcClient(
         if (offset != null) {
             if (offset < received && offset + chunk.size <= received) return
             if (offset != received) {
-                onStatus("Restore failed for ${file.filename}: chunk order was invalid")
+                val message = "Restore failed for ${file.filename}: chunk order was invalid"
+                onStatus(message)
                 incomingFiles.remove(fileId)
+                WebRtcTransferProgressStore.fail(transferOwnerId, fileId, message, SystemClock.elapsedRealtime())
                 return
             }
         }
@@ -341,6 +358,7 @@ class OneImageWebRtcClient(
 
         val acceptedChunk = if (chunk.size > remaining) chunk.copyOf(remaining) else chunk
         file.bytes.write(acceptedChunk)
+        reportIncomingProgress(file)
         if (file.endReceived || file.bytes.size().toLong() >= file.size) {
             finalizeIncomingFile(fileId)
         }
@@ -353,6 +371,13 @@ class OneImageWebRtcClient(
             incomingFiles[fileId] = incoming
             return
         }
+
+        WebRtcTransferProgressStore.verifying(
+            transferOwnerId,
+            fileId,
+            incoming.size,
+            SystemClock.elapsedRealtime()
+        )
 
         val expectedWireSize = incoming.size.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         val trimmedWireBytes = if (wireBytes.size > expectedWireSize) {
@@ -371,7 +396,9 @@ class OneImageWebRtcClient(
         }
         val actualChecksum = incoming.checksum?.let { sha256(fileBytes) }
         if (incoming.checksum != null && actualChecksum != null && !incoming.checksum.equals(actualChecksum, ignoreCase = true)) {
-            onStatus("Restore failed for ${incoming.filename}: checksum mismatch")
+            val message = "Restore failed for ${incoming.filename}: checksum mismatch"
+            onStatus(message)
+            WebRtcTransferProgressStore.fail(transferOwnerId, fileId, message, SystemClock.elapsedRealtime())
             return
         }
 
@@ -402,6 +429,19 @@ class OneImageWebRtcClient(
                 label = incoming.label
             )
         )
+        WebRtcTransferProgressStore.complete(transferOwnerId, fileId, SystemClock.elapsedRealtime())
+    }
+
+    private fun reportIncomingProgress(file: IncomingFile) {
+        val received = file.bytes.size().toLong()
+        val percent = if (file.size <= 0L) 0 else ((received * 100L) / file.size).toInt().coerceIn(0, 100)
+        val nowMs = SystemClock.elapsedRealtime()
+        if (received < file.size && percent == file.lastProgressPercent && nowMs - file.lastProgressAtMs < PROGRESS_UPDATE_INTERVAL_MS) {
+            return
+        }
+        file.lastProgressPercent = percent
+        file.lastProgressAtMs = nowMs
+        WebRtcTransferProgressStore.receiving(transferOwnerId, file.fileId, received, file.size, nowMs)
     }
 
     private fun parseFramedBinary(bytes: ByteArray): FramedChunk? {
@@ -437,6 +477,8 @@ class OneImageWebRtcClient(
         val label: String?,
         val checksum: String?,
         var endReceived: Boolean = false,
+        var lastProgressPercent: Int = 0,
+        var lastProgressAtMs: Long = 0L,
         val bytes: ByteArrayOutputStream = ByteArrayOutputStream()
     )
 
@@ -485,6 +527,7 @@ class OneImageWebRtcClient(
 
     companion object {
         private const val WEBRTC_CHUNK_SIZE = 16 * 1024
+        private const val PROGRESS_UPDATE_INTERVAL_MS = 250L
         private const val FRAMED_BINARY_MAGIC = "OWB5"
         private const val FRAMED_BINARY_MIN_HEADER_BYTES = 13
     }

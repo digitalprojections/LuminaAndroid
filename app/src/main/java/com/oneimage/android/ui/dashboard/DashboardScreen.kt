@@ -43,6 +43,7 @@ fun DashboardScreen(
     val items = listOf(
         DashboardItem("Image Generation", Icons.Default.AutoAwesome, Screen.ImageGen, "Consistent character views"),
         DashboardItem("Video Generation", Icons.Default.Movie, Screen.VideoGen, "Short video from two images"),
+        DashboardItem("Single I2V", Icons.Default.SmartDisplay, Screen.SingleI2V, "One image into a clip up to 10 seconds"),
         DashboardItem("Keyframes", Icons.Default.Animation, Screen.Keyframes, "Longer video from key images"),
         DashboardItem("LipSync", Icons.Default.Mic, Screen.LipSync, "Speaking or singing image clips"),
         DashboardItem("Character Replacement", Icons.Default.FaceRetouchingNatural, Screen.CharacterReplacement, "Change a character in a clip"),
@@ -70,8 +71,11 @@ fun DashboardScreen(
                             color = MaterialTheme.colorScheme.surfaceVariant,
                             shape = CircleShape
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.clickable { navController.navigate(Screen.Settings) }
+                            ) {
+                                Icon(Icons.Default.Person, contentDescription = "Account settings", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                             }
                         }
                     }
@@ -125,15 +129,15 @@ fun DashboardScreen(
                 .background(surfaceGradient)
         ) {
             LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
+                columns = GridCells.Adaptive(minSize = 148.dp),
                 contentPadding = PaddingValues(
                     start = 16.dp,
                     end = 16.dp,
                     top = padding.calculateTopPadding() + 16.dp,
                     bottom = padding.calculateBottomPadding() + 16.dp
                 ),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
                 items(items) { item ->
@@ -151,9 +155,9 @@ fun DashboardCard(item: DashboardItem, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(160.dp)
+            .height(124.dp)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
         ),
@@ -162,12 +166,12 @@ fun DashboardCard(item: DashboardItem, onClick: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.SpaceBetween
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(44.dp)
+                    .size(36.dp)
                     .background(PrimaryGradient, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
@@ -175,17 +179,18 @@ fun DashboardCard(item: DashboardItem, onClick: () -> Unit) {
                     imageVector = item.icon,
                     contentDescription = null,
                     tint = Color.Black,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(20.dp)
                 )
             }
             Column {
-                Text(text = item.title, style = MaterialTheme.typography.titleLarge, fontSize = 16.sp)
+                Text(text = item.title, style = MaterialTheme.typography.titleMedium, fontSize = 14.sp, maxLines = 2)
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = item.description,
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 16.sp
+                    lineHeight = 14.sp,
+                    maxLines = 2
                 )
             }
         }

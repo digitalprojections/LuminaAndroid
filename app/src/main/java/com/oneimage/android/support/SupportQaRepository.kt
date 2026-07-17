@@ -64,7 +64,7 @@ val starterAnswers = listOf(
     qa("workflow-character-replacement", "Workflows", 306, "What files does Character Replacement need?", "It needs a source video and a character reference image.", "Character Replacement changes a character in a short clip while preserving motion, pose, timing, and scene. Use a short source video and a clear reference image of the replacement identity or character.", "character replacement", "video", "reference image"),
     qa("workflow-game-mesh", "Workflows", 307, "What does Game Mesh create?", "Game Mesh drafts a 3D model from one image.", "Use Game Mesh when you have a clear image of an object or asset and want a draft 3D model. A clean, centered source image gives better results than a busy scene.", "game mesh", "3d", "model", "image"),
     qa("workflow-upscaler", "Workflows", 308, "What is Game Asset Upscaler for?", "It cleans and enlarges sprites, icons, tiles, and UI assets.", "Game Asset Upscaler is for improving smaller game art. The default direction asks for high-definition game asset style and avoids pixel art unless you explicitly want a different look.", "upscaler", "game asset", "sprite", "icon"),
-    qa("workflow-video-description", "Workflows", 309, "What does Video Description do?", "It creates scene notes from a short source video.", "Use Video Description when you want the app to inspect a clip and describe the scene. It is useful before using other workflows that need a strong prompt or asset description.", "video description", "scene", "prompt"),
+    qa("workflow-single-i2v", "Workflows", 309, "What does Single I2V create?", "It turns one image into a short motion clip.", "Upload one image, describe the motion or camera direction, choose a duration from 3 to 10 seconds, then use the prepared image size or select an output aspect ratio.", "single i2v", "image to video", "motion", "duration"),
     qa("workflow-stuck", "Workflows", 310, "What should I do if a generation is stuck?", "Open workflow history, wait for the current status to refresh, then retry only if no task is active.", "Long running video and image workflows can take several minutes. Keep the app open long enough for the current status to refresh. If the task still does not update, capture the workflow name, prompt, and time.", "stuck", "pending", "running", "task"),
     qa("workflow-quality", "Workflows", 311, "How can I improve output quality?", "Use direct prompts, strong source images, and avoid mixing too many style goals in one request.", "Quality depends heavily on the source image and prompt. Use one clear subject, describe the intended motion or style directly, and avoid conflicting instructions. For multi-image workflows, use images with matching lighting and framing.", "quality", "prompt", "source image"),
 
@@ -95,6 +95,7 @@ private fun qa(
     answer = answer,
     category = category,
     keywords = keywords.toList(),
+    workflows = inferredWorkflows(id),
     sortOrder = sortOrder,
     active = true
 )

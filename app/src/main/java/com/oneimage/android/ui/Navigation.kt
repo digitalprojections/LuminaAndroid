@@ -16,6 +16,9 @@ sealed class Screen {
     object VideoGen : Screen()
 
     @Serializable
+    object SingleI2V : Screen()
+
+    @Serializable
     object LipSync : Screen()
 
     @Serializable
@@ -29,9 +32,6 @@ sealed class Screen {
 
     @Serializable
     object GameAssetUpscaler : Screen()
-
-    @Serializable
-    object VideoDescription : Screen()
 
     @Serializable
     object Keyframes : Screen()
@@ -50,4 +50,7 @@ sealed class Screen {
 
     @Serializable
     object Legal : Screen()
+
+    @Serializable
+    data class History(val workflowKey: String) : Screen()
 }

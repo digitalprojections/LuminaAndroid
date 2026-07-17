@@ -92,6 +92,7 @@ private val ExpectedAngles = listOf(
 @Composable
 fun ImageGenScreen(
     onBack: () -> Unit,
+    onHistory: () -> Unit,
     viewModel: ImageGenViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -134,6 +135,11 @@ fun ImageGenScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onHistory) {
+                        Icon(Icons.Default.History, contentDescription = "History")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
@@ -211,23 +217,6 @@ fun ImageGenScreen(
                     if (task != null) viewModel.restoreTask(context, clientId, task)
                 },
                 onSave = { result -> viewModel.saveResult(context, result) }
-            )
-
-            WorkflowHistoryList(
-                title = "Recent Generations",
-                emptyText = "No Image Generation history yet.",
-                tasks = state.history,
-                currentTaskId = state.currentTaskId,
-                taskTitle = { task -> task.prompt?.ifBlank { "Image Generation task" } ?: "Image Generation task" },
-                onOpen = viewModel::loadTask,
-                onRestore = { task -> viewModel.restoreTask(context, clientId, task) },
-                onDelete = { task -> viewModel.deleteTask(clientId, task) },
-                onCancel = { task ->
-                    cancelAction = {
-                        viewModel.loadTask(task)
-                        viewModel.cancelCurrentTask(clientId)
-                    }
-                }
             )
         }
     }

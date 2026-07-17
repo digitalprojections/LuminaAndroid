@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
@@ -21,11 +22,11 @@ import com.oneimage.android.ui.account.AccountViewModel
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    darkModeEnabled: Boolean,
+    onDarkModeChanged: (Boolean) -> Unit,
     onLogout: () -> Unit,
     accountViewModel: AccountViewModel = viewModel()
 ) {
-    var notificationsEnabled by remember { mutableStateOf(true) }
-    var darkModeEnabled by remember { mutableStateOf(true) }
     val accountState by accountViewModel.uiState.collectAsState()
     val user = FirebaseAuth.getInstance().currentUser
     val profile = accountState.profile
@@ -101,8 +102,24 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Push Notifications")
-                    Switch(checked = notificationsEnabled, onCheckedChange = { notificationsEnabled = it })
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.Notifications,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text("Push Notifications")
+                            Text(
+                                "Coming soon",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                    AssistChip(onClick = { }, enabled = false, label = { Text("Not enabled") })
                 }
             }
 
@@ -113,7 +130,7 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Dark Mode")
-                    Switch(checked = darkModeEnabled, onCheckedChange = { darkModeEnabled = it })
+                    Switch(checked = darkModeEnabled, onCheckedChange = onDarkModeChanged)
                 }
             }
 

@@ -115,6 +115,31 @@ fun SupportScreen(
                 }
             }
 
+            if (state.workflowFilters.size > 1) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            "Workflow",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            state.workflowFilters.forEach { workflow ->
+                                FilterChip(
+                                    selected = state.selectedWorkflow == workflow,
+                                    onClick = { viewModel.selectWorkflow(workflow) },
+                                    label = { Text(workflow) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             if (state.answers.isEmpty()) {
                 item { EmptySupportResults() }
             } else if (state.selectedCategory == "All") {

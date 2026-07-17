@@ -25,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -81,6 +82,7 @@ import kotlin.math.roundToInt
 @Composable
 fun LipSyncScreen(
     onBack: () -> Unit,
+    onHistory: () -> Unit,
     viewModel: LipSyncViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -130,6 +132,11 @@ fun LipSyncScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onHistory) {
+                        Icon(Icons.Default.History, contentDescription = "History")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
@@ -245,22 +252,6 @@ fun LipSyncScreen(
             }
 
             OutputManifest(state, onSave = { result -> viewModel.saveResult(context, result) })
-            WorkflowHistoryList(
-                title = "History",
-                emptyText = "No lip sync history yet.",
-                tasks = state.history,
-                currentTaskId = state.currentTaskId,
-                taskTitle = { task -> task.prompt?.ifBlank { "Lip sync" } ?: "Lip sync" },
-                onOpen = viewModel::loadTask,
-                onRestore = { task -> viewModel.restoreTask(context, clientId, task) },
-                onDelete = { task -> viewModel.deleteTask(clientId, task) },
-                onCancel = { task ->
-                    cancelAction = {
-                        viewModel.loadTask(task)
-                        viewModel.cancelCurrentTask(clientId)
-                    }
-                }
-            )
         }
     }
 }

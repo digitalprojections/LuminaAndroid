@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.TaskAlt
@@ -115,11 +116,11 @@ private val STORY_ASPECT_RATIOS = listOf(
 )
 
 enum class WorkflowKind {
+    SingleI2V,
     CharacterReplacement,
     StoryImages,
     MeshModel,
     GameAssetUpscaler,
-    VideoDescription,
     Keyframes
 }
 
@@ -150,6 +151,21 @@ data class WorkflowSpec(
 )
 
 object WorkflowSpecs {
+    val SingleI2V = WorkflowSpec(
+        kind = WorkflowKind.SingleI2V,
+        taskType = "single_i2v",
+        title = "Single I2V",
+        subtitle = "One image into a focused clip up to 10 seconds",
+        action = "Create Video",
+        estimatedCredits = "12 credits",
+        fileSlots = listOf(
+            WorkflowFileSlot("singleI2VImage", "Source image", "image/*", "Choose the image to animate.")
+        ),
+        textSlots = listOf(
+            WorkflowTextSlot("prompt", "Motion direction", "Describe the motion, camera move, or atmosphere.", SingleI2VConfig.DEFAULT_PROMPT, 4)
+        )
+    )
+
     val CharacterReplacement = WorkflowSpec(
         kind = WorkflowKind.CharacterReplacement,
         taskType = "character_replacement",
@@ -207,17 +223,6 @@ object WorkflowSpecs {
         )
     )
 
-    val VideoDescription = WorkflowSpec(
-        kind = WorkflowKind.VideoDescription,
-        taskType = "video_description",
-        title = "Video Description",
-        subtitle = "Scene notes from short clips",
-        action = "Describe Video",
-        estimatedCredits = "10 credits",
-        fileSlots = listOf(WorkflowFileSlot("inputVideo", "Source video", "video/*", "Use a short video up to 10 seconds.")),
-        textSlots = emptyList()
-    )
-
     val Keyframes = WorkflowSpec(
         kind = WorkflowKind.Keyframes,
         taskType = "keyframes",
@@ -238,7 +243,11 @@ object WorkflowSpecs {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
+fun WorkflowScreen(
+    spec: WorkflowSpec,
+    onBack: () -> Unit,
+    onHistory: () -> Unit
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val firestore = remember { FirebaseFirestore.getInstance() }
@@ -247,11 +256,17 @@ fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
 
     val selectedUris = remember(spec.kind) { mutableStateMapOf<String, Uri>() }
     val fileInfos = remember(spec.kind) { mutableStateMapOf<String, OneImageFileInfo>() }
+    val imageDimensions = remember(spec.kind) { mutableStateMapOf<String, Pair<Int, Int>>() }
     val durations = remember(spec.kind) { mutableStateMapOf<String, Float>() }
     val textValues = remember(spec.kind) {
         mutableStateMapOf<String, String>().apply {
             spec.textSlots.forEach { put(it.id, it.defaultValue) }
             if (spec.kind == WorkflowKind.StoryImages) put("aspectRatio", STORY_ASPECT_RATIOS.first())
+            if (spec.kind == WorkflowKind.SingleI2V) {
+                put("duration", SingleI2VConfig.DEFAULT_DURATION_SECONDS.toString())
+                put("resolutionMode", "input")
+                put("aspectRatio", SingleI2VConfig.DEFAULT_ASPECT_RATIO)
+            }
         }
     }
     var keyframeCount by remember(spec.kind) { mutableStateOf(if (spec.kind == WorkflowKind.Keyframes) 2 else 0) }
@@ -288,6 +303,7 @@ fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
                         val prepared = prepareImageTransfer(context, uri, slot.id)
                         selectedUris[slot.id] = prepared.uri
                         fileInfos[slot.id] = prepared.fileInfo
+                        imageDimensions[slot.id] = prepared.width to prepared.height
                     } else {
                         selectedUris[slot.id] = uri
                         fileInfos[slot.id] = OneImageApi.getFileInfo(context.contentResolver, uri)
@@ -386,6 +402,11 @@ fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                 },
+                actions = {
+                    IconButton(onClick = onHistory) {
+                        Icon(Icons.Default.History, contentDescription = "History")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.8f)),
                 windowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)
             )
@@ -476,6 +497,14 @@ fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
                         onSelected = { textValues["aspectRatio"] = it }
                     )
                 }
+
+                if (spec.kind == WorkflowKind.SingleI2V) {
+                    SingleI2VControls(
+                        values = textValues,
+                        imageDimensions = imageDimensions["singleI2VImage"],
+                        enabled = !isBusy
+                    )
+                }
             }
 
             Button(
@@ -505,7 +534,7 @@ fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
                             newTransport.setInputFiles(activeFileSlots.associate { slot -> slot.id to (selectedUris.getValue(slot.id) to fileInfos.getValue(slot.id)) })
                             if (!newTransport.connect()) error("WebRTC direct transfer did not connect to the local agent.")
                             status = "Creating task..."
-                            val taskId = submitWorkflow(spec, baseUrl, clientId, activeFileSlots, fileInfos, durations, textValues)
+                            val taskId = submitWorkflow(spec, baseUrl, clientId, activeFileSlots, fileInfos, imageDimensions, durations, textValues)
                             status = "Queued"
                             repeat(240) {
                                 val task = OneImageApi.getImageTask(baseUrl, clientId, taskId)
@@ -613,84 +642,6 @@ fun WorkflowScreen(spec: WorkflowSpec, onBack: () -> Unit) {
                 }
             })
 
-            WorkflowHistoryList(
-                title = "History",
-                emptyText = "No ${spec.title.lowercase()} history yet.",
-                tasks = history,
-                currentTaskId = currentTask?.id,
-                taskTitle = { task -> historyTaskTitle(spec, task) },
-                onOpen = { task ->
-                    val localTask = LocalTaskResultStore.overlayTask(task)
-                    currentTask = localTask
-                    results = mergeResults(emptyList(), localTask.results)
-                    status = localTask.statusDetails ?: localTask.status
-                    error = if (localTask.status == "failed") localTask.error ?: "Workflow failed." else null
-                    isBusy = localTask.status in setOf("pending", "processing", "initializing")
-                },
-                onRestore = { task ->
-                    scope.launch {
-                        if (clientId.isBlank()) {
-                            error = "Please sign in again."
-                            status = "Sign-in required"
-                            return@launch
-                        }
-
-                        val localTask = LocalTaskResultStore.overlayTask(task)
-                        currentTask = localTask
-                        results = mergeResults(emptyList(), localTask.results)
-                        error = null
-
-                        val openTransport = transport?.takeIf { it.isOpen() } ?: run {
-                            val newTransport = OneImageWebRtcClient(
-                                context = context,
-                                clientId = clientId,
-                                onStatus = { status = it },
-                                onFileReceived = { file ->
-                                    results = mergeResults(results, listOf(LocalTaskResultStore.persistReceivedFile(file)))
-                                }
-                            )
-                            transport?.close()
-                            transport = newTransport
-                            if (!newTransport.connect()) {
-                                error = "WebRTC direct transfer did not connect to the local agent."
-                                status = "Restore failed"
-                                return@launch
-                            }
-                            newTransport
-                        }
-
-                        val sent = openTransport.requestTaskResults(task.id, task.type.ifBlank { spec.taskType })
-                        if (!sent) {
-                            error = "Restore request could not be sent."
-                            status = "Restore failed"
-                            return@launch
-                        }
-                        status = "Restoring results..."
-                    }
-                },
-                onDelete = { task ->
-                    scope.launch {
-                        runCatching { OneImageApi.deleteTask(baseUrl, clientId, task.id) }
-                            .onFailure { deleteError -> error = deleteError.message ?: "Could not delete task." }
-                        LocalTaskResultStore.clearTask(task.id)
-                        if (currentTask?.id == task.id) {
-                            currentTask = null
-                            results = emptyList()
-                            status = "Ready"
-                            isBusy = false
-                        }
-                    }
-                },
-                onCancel = { task ->
-                    cancelAction = {
-                        scope.launch {
-                            currentTask = LocalTaskResultStore.overlayTask(task)
-                            runCatching { OneImageApi.cancelTask(baseUrl, clientId, task.id) }
-                                .onFailure { cancelError -> error = cancelError.message ?: "Could not cancel task." }
-                        }
-                    }
-                }
-            )
         }
     }
     }
@@ -829,6 +780,90 @@ private fun StoryAspectRatioControls(selected: String, enabled: Boolean, onSelec
 }
 
 @Composable
+private fun SingleI2VControls(
+    values: MutableMap<String, String>,
+    imageDimensions: Pair<Int, Int>?,
+    enabled: Boolean
+) {
+    val duration = SingleI2VConfig.clampDuration(values["duration"])
+    val resolutionMode = values["resolutionMode"].takeIf { it == "selector" } ?: "input"
+    val aspectRatio = SingleI2VConfig.normalizeAspectRatio(values["aspectRatio"])
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Video Dimensions", fontWeight = FontWeight.SemiBold)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(
+                onClick = { values["resolutionMode"] = "input" },
+                enabled = enabled,
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = if (resolutionMode == "input") MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else Color.Transparent
+                )
+            ) {
+                Text("Image Size")
+            }
+            OutlinedButton(
+                onClick = { values["resolutionMode"] = "selector" },
+                enabled = enabled,
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = if (resolutionMode == "selector") MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else Color.Transparent
+                )
+            ) {
+                Text("Choose Ratio")
+            }
+        }
+
+        if (resolutionMode == "input") {
+            Text(
+                imageDimensions?.let { "Prepared image: ${it.first} x ${it.second}" } ?: "The output follows the prepared image dimensions.",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            SingleI2VConfig.aspectRatios.chunked(2).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    row.forEach { ratio ->
+                        OutlinedButton(
+                            onClick = { values["aspectRatio"] = ratio },
+                            enabled = enabled,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (aspectRatio == ratio) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else Color.Transparent
+                            )
+                        ) {
+                            Text(ratio.substringBefore(" "), maxLines = 1)
+                        }
+                    }
+                }
+            }
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Video Length", fontWeight = FontWeight.SemiBold)
+                Text("3 to 10 seconds at 25 fps", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Surface(shape = RoundedCornerShape(999.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)) {
+                Text(
+                    "$duration sec",
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+        Slider(
+            value = duration.toFloat(),
+            onValueChange = { values["duration"] = it.toInt().coerceIn(SingleI2VConfig.MIN_DURATION_SECONDS, SingleI2VConfig.MAX_DURATION_SECONDS).toString() },
+            valueRange = SingleI2VConfig.MIN_DURATION_SECONDS.toFloat()..SingleI2VConfig.MAX_DURATION_SECONDS.toFloat(),
+            steps = SingleI2VConfig.MAX_DURATION_SECONDS - SingleI2VConfig.MIN_DURATION_SECONDS - 1,
+            enabled = enabled
+        )
+    }
+}
+
+@Composable
 private fun CharacterDurationControl(
     sourceDuration: Float?,
     value: String,
@@ -958,9 +993,24 @@ private suspend fun submitWorkflow(
     clientId: String,
     activeFileSlots: List<WorkflowFileSlot>,
     files: Map<String, OneImageFileInfo>,
+    imageDimensions: Map<String, Pair<Int, Int>>,
     durations: Map<String, Float>,
     text: Map<String, String>
 ): String = when (spec.kind) {
+    WorkflowKind.SingleI2V -> {
+        val dimensions = imageDimensions["singleI2VImage"] ?: (0 to 0)
+        OneImageApi.submitSingleI2VWorkflow(
+            baseUrl = baseUrl,
+            clientId = clientId,
+            prompt = text["prompt"].orEmpty(),
+            imageFileInfo = files.getValue("singleI2VImage"),
+            duration = SingleI2VConfig.clampDuration(text["duration"]),
+            resolutionMode = text["resolutionMode"].takeIf { it == "selector" } ?: "input",
+            aspectRatio = SingleI2VConfig.normalizeAspectRatio(text["aspectRatio"]),
+            inputWidth = dimensions.first,
+            inputHeight = dimensions.second
+        )
+    }
     WorkflowKind.CharacterReplacement -> {
         val sourceDuration = durations["characterVideo"]?.takeIf { it > 0f } ?: 1f
         val duration = text["duration"]?.toFloatOrNull()?.coerceIn(0.1f, sourceDuration.coerceAtMost(15f)) ?: sourceDuration.coerceAtMost(5f)
@@ -969,7 +1019,6 @@ private suspend fun submitWorkflow(
     WorkflowKind.StoryImages -> OneImageApi.submitQwenStoryImagesWorkflow(baseUrl, clientId, files.getValue("qwenImage"), text["storyPrompt"].orEmpty(), text["stylePrompt"].orEmpty(), text["aspectRatio"].orEmpty().ifBlank { STORY_ASPECT_RATIOS.first() })
     WorkflowKind.MeshModel -> OneImageApi.submitMeshModelWorkflow(baseUrl, clientId, files.getValue("meshImage"))
     WorkflowKind.GameAssetUpscaler -> OneImageApi.submitGameAssetUpscalerWorkflow(baseUrl, clientId, files.getValue("upscalerImage"), text["description"].orEmpty(), text["importantDescription"].orEmpty(), text["negativePrompt"].orEmpty())
-    WorkflowKind.VideoDescription -> OneImageApi.submitVideoDescriptionWorkflow(baseUrl, clientId, files.getValue("inputVideo"), durations["inputVideo"]?.takeIf { it > 0f } ?: 1f)
     WorkflowKind.Keyframes -> OneImageApi.submitKeyframesWorkflow(
         baseUrl,
         clientId,
@@ -1047,7 +1096,6 @@ private val IMAGE_RESULT_EXTENSIONS = setOf(
 
 private fun historyTaskTitle(spec: WorkflowSpec, task: OneImageTask): String = when (spec.kind) {
     WorkflowKind.MeshModel -> "Game Mesh"
-    WorkflowKind.VideoDescription -> "Video Description"
     else -> task.prompt?.ifBlank { spec.title } ?: spec.title
 }
 

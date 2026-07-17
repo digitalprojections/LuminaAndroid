@@ -68,6 +68,7 @@ private val MESH_VIEWER_BACKGROUND_PRESETS = listOf(
 @Composable
 fun MeshModelScreen(
     onBack: () -> Unit,
+    onHistory: () -> Unit,
     viewModel: MeshModelViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -142,6 +143,11 @@ fun MeshModelScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
+                actions = {
+                    IconButton(onClick = onHistory) {
+                        Icon(Icons.Default.History, contentDescription = "History")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
             )
         }
@@ -185,23 +191,6 @@ fun MeshModelScreen(
                 onSave = { res -> viewModel.saveResult(context, res) },
                 onRestore = { task -> if (task != null) viewModel.restoreTask(context, clientId, task) },
                 onReset = viewModel::clearSource
-            )
-
-            WorkflowHistoryList(
-                title = "Recent Meshes",
-                emptyText = "No mesh history yet.",
-                tasks = state.history,
-                currentTaskId = state.currentTaskId,
-                taskTitle = { "Mesh model" },
-                onOpen = viewModel::loadTask,
-                onRestore = { task -> viewModel.restoreTask(context, clientId, task) },
-                onDelete = { task -> viewModel.deleteTask(clientId, task) },
-                onCancel = { task ->
-                    cancelAction = {
-                        viewModel.loadTask(task)
-                        viewModel.cancelCurrentTask(clientId)
-                    }
-                }
             )
         }
     }

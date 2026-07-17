@@ -188,8 +188,8 @@ fun BillingScreen(
             item {
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
-                    onClick = { /* Stripe flow */ },
-                    enabled = !isAdmin && serviceModelAccepted,
+                    onClick = { },
+                    enabled = false,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(64.dp),
@@ -204,7 +204,7 @@ fun BillingScreen(
                         when {
                             isAdmin -> "Admin Access Active"
                             !serviceModelAccepted -> "Confirm Service Model"
-                            else -> "Upgrade Now"
+                            else -> "Checkout Coming Soon"
                         },
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp
@@ -217,7 +217,11 @@ fun BillingScreen(
                     Icon(Icons.Default.CreditCard, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Secure checkout via Stripe",
+                        text = if (serviceModelAccepted && !isAdmin) {
+                            "Stripe checkout is not enabled in this Android build yet."
+                        } else {
+                            "Secure checkout will open here when payment setup is enabled."
+                        },
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

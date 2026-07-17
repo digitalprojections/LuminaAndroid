@@ -3,6 +3,8 @@ package com.oneimage.android.ui.auth
 import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -10,7 +12,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -23,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -40,6 +42,7 @@ import com.oneimage.android.ui.theme.PrimaryGradient
 @Composable
 fun LoginScreen(
     onLoginSuccess: () -> Unit,
+    onLegalClick: () -> Unit,
     viewModel: AuthViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -108,19 +111,11 @@ fun LoginScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .size(96.dp)
-                    .background(PrimaryGradient, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.AutoAwesome,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(48.dp)
-                )
-            }
+            Image(
+                painter = painterResource(R.drawable.genstudio_logo),
+                contentDescription = stringResource(R.string.app_name),
+                modifier = Modifier.size(144.dp)
+            )
             
             Spacer(modifier = Modifier.height(32.dp))
 
@@ -162,7 +157,7 @@ fun LoginScreen(
                 text = stringResource(R.string.privacy_acceptance_checkbox)
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
             Button(
                 onClick = { startGoogleSignIn() },
@@ -183,27 +178,12 @@ fun LoginScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "Get Started", 
+                        text = if (isLoading) "Signing in..." else "Sign in with Google", 
                         fontWeight = FontWeight.Bold, 
                         fontSize = 18.sp,
                         color = Color.Black
                     )
                 }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            TextButton(
-                onClick = { startGoogleSignIn() },
-                enabled = !isLoading && canSignIn,
-                modifier = Modifier.height(56.dp)
-            ) {
-                Text(
-                    if (isLoading) "Signing in..." else "Sign in with Google",
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 16.sp
-                )
             }
 
             if (uiState is AuthUiState.Error) {
@@ -225,7 +205,8 @@ fun LoginScreen(
                 Text(
                     "Privacy Policy",
                     fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable(onClick = onLegalClick)
                 )
                 Box(
                     modifier = Modifier
@@ -236,7 +217,8 @@ fun LoginScreen(
                 Text(
                     "Terms of Use",
                     fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable(onClick = onLegalClick)
                 )
             }
             Spacer(modifier = Modifier.height(16.dp))
@@ -251,7 +233,9 @@ private fun LegalAcceptanceRow(
     text: String
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) },
         verticalAlignment = Alignment.Top
     ) {
         Checkbox(
