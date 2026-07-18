@@ -82,6 +82,7 @@ fun SettingsScreen(
                 AccountRow("Plan", profile?.planLabel ?: if (accountState.isLoading) "Syncing..." else "none")
                 AccountRow("Status", profile?.statusLabel ?: if (accountState.isLoading) "Syncing..." else "unpaid")
                 AccountRow("Credits", profile?.creditBalanceText ?: if (accountState.isLoading) "Syncing..." else "0")
+                AccountRow("Account ID", user?.uid ?: if (accountState.isLoading) "Syncing..." else "Unavailable")
                 if (accountState.error != null) {
                     Text(
                         text = accountState.error ?: "",

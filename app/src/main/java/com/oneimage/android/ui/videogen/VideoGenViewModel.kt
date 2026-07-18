@@ -26,6 +26,10 @@ import com.oneimage.android.api.OneImageQueueStatus
 import com.oneimage.android.api.OneImageTask
 import com.oneimage.android.api.OneImageTaskResult
 import com.oneimage.android.api.OneImageWebRtcClient
+import com.oneimage.android.api.WorkflowPricingConfig
+import com.oneimage.android.api.WorkflowPricingRepository
+import com.oneimage.android.api.oneVideoCredits
+import com.oneimage.android.ui.shared.savedAssetFilename
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -42,8 +46,6 @@ import kotlin.math.roundToInt
 private const val TASK_HISTORY_LIMIT = 250L
 private const val ENGINE_STATUS_STALE_MS = 90_000L
 private const val MAX_INPUT_IMAGE_LONG_EDGE = 1080f
-private const val VIDEO_CREDITS_PER_SECOND = 4
-
 enum class VideoGenPhase {
     Idle,
     Preparing,
@@ -76,6 +78,7 @@ data class VideoGenUiState(
     val results: List<OneImageTaskResult> = emptyList(),
     val history: List<OneImageTask> = emptyList(),
     val profile: OneImageAccountProfile? = null,
+    val pricing: WorkflowPricingConfig = WorkflowPricingConfig(),
     val engineReady: Boolean = false,
     val queueStatus: OneImageQueueStatus? = null
 ) {
@@ -87,7 +90,7 @@ data class VideoGenUiState(
             phase == VideoGenPhase.Restoring
 
     val estimatedCredits: Int
-        get() = duration.coerceAtLeast(1) * VIDEO_CREDITS_PER_SECOND
+        get() = pricing.oneVideoCredits(duration)
 
     val hasEnoughCredits: Boolean
         get() = profile?.hasEnoughCredits(estimatedCredits) == true
@@ -112,6 +115,11 @@ class VideoGenViewModel : ViewModel() {
         viewModelScope.launch {
             com.oneimage.android.api.AccountManager.profileFlow.collect { profile ->
                 _uiState.value = _uiState.value.copy(profile = profile)
+            }
+        }
+        viewModelScope.launch {
+            WorkflowPricingRepository.pricingFlow.collect { pricing ->
+                _uiState.value = _uiState.value.copy(pricing = pricing)
             }
         }
         authListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
@@ -406,9 +414,10 @@ class VideoGenViewModel : ViewModel() {
         val appContext = context.applicationContext
         viewModelScope.launch {
             try {
-                val savedUri = copyResultToPictures(appContext, result)
+                val savedName = savedAssetFilename("Video Generation", result, "mp4")
+                copyResultToPictures(appContext, result, savedName)
                 _uiState.value = _uiState.value.copy(
-                    saveMessage = "Saved ${savedUri.lastPathSegment ?: result.filename.ifBlank { result.label }}",
+                    saveMessage = "Saved $savedName",
                     error = null
                 )
             } catch (error: Exception) {
@@ -599,9 +608,9 @@ class VideoGenViewModel : ViewModel() {
         }
     }
 
-    private suspend fun copyResultToPictures(context: Context, result: OneImageTaskResult): Uri = withContext(Dispatchers.IO) {
+    private suspend fun copyResultToPictures(context: Context, result: OneImageTaskResult, savedName: String): Uri = withContext(Dispatchers.IO) {
         if (result.url.startsWith("webrtc://")) error("This result needs to be restored before saving.")
-        val filename = safeFilename(result.filename.ifBlank { "${result.label}.png" })
+        val filename = safeFilename(savedName)
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
             put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")

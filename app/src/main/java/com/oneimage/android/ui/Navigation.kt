@@ -40,9 +40,6 @@ sealed class Screen {
     object DataSync : Screen()
 
     @Serializable
-    object Billing : Screen()
-
-    @Serializable
     object Settings : Screen()
 
     @Serializable

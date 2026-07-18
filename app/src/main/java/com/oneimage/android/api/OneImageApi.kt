@@ -215,6 +215,7 @@ object OneImageApi {
         prompt: String,
         imageFileInfo: OneImageFileInfo,
         duration: Int,
+        frameRate: Int,
         resolutionMode: String,
         aspectRatio: String,
         inputWidth: Int,
@@ -227,6 +228,7 @@ object OneImageApi {
             .put("prompt", prompt)
             .put("seed", 0)
             .put("duration", duration)
+            .put("frameRate", frameRate)
             .put("resolutionMode", resolutionMode)
             .put("aspectRatio", aspectRatio)
             .put("inputWidth", inputWidth)
@@ -453,6 +455,60 @@ object OneImageApi {
                 error(json.optString("message", "Could not load account profile."))
             }
             parseAccountProfile(json.getJSONObject("profile"))
+        }
+    }
+
+    suspend fun registerNotificationToken(
+        baseUrl: String,
+        token: String,
+        appVersion: String,
+        uidHint: String? = null
+    ) = withContext(Dispatchers.IO) {
+        val payload = JSONObject()
+            .put("token", token)
+            .put("appVersion", appVersion)
+        if (!uidHint.isNullOrBlank()) payload.put("uidHint", uidHint)
+
+        val requestBuilder = Request.Builder()
+            .url("${baseUrl.trimEnd('/')}/api/mobile/notification-token")
+            .post(payload.toString().toRequestBody("application/json".toMediaType()))
+            .addHeader("Content-Type", "application/json")
+
+        val authToken = FirebaseAuth.getInstance().currentUser?.getIdToken(false)?.awaitResult()?.token
+            ?: return@withContext
+        requestBuilder.addHeader("Authorization", "Bearer $authToken")
+
+        client.newCall(requestBuilder.build()).execute().use { response ->
+            val text = response.body?.string().orEmpty()
+            val json = JSONObject(text.ifBlank { "{}" })
+            if (!response.isSuccessful || json.optBoolean("success") == false) {
+                error(json.optString("message", "Could not register notification token."))
+            }
+        }
+    }
+
+    suspend fun markNotificationsSeen(
+        baseUrl: String,
+        notificationIds: List<String>
+    ) = withContext(Dispatchers.IO) {
+        val payload = JSONObject()
+            .put("notificationIds", JSONArray(notificationIds))
+
+        val requestBuilder = Request.Builder()
+            .url("${baseUrl.trimEnd('/')}/api/mobile/notifications/mark-seen")
+            .post(payload.toString().toRequestBody("application/json".toMediaType()))
+            .addHeader("Content-Type", "application/json")
+
+        val authToken = FirebaseAuth.getInstance().currentUser?.getIdToken(false)?.awaitResult()?.token
+            ?: return@withContext
+        requestBuilder.addHeader("Authorization", "Bearer $authToken")
+
+        client.newCall(requestBuilder.build()).execute().use { response ->
+            val text = response.body?.string().orEmpty()
+            val json = JSONObject(text.ifBlank { "{}" })
+            if (!response.isSuccessful || json.optBoolean("success") == false) {
+                error(json.optString("message", "Could not update notifications."))
+            }
         }
     }
 

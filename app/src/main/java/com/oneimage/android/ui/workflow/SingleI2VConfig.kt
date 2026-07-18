@@ -6,6 +6,9 @@ internal object SingleI2VConfig {
     const val MIN_DURATION_SECONDS = 3
     const val DEFAULT_DURATION_SECONDS = 3
     const val MAX_DURATION_SECONDS = 10
+    const val MIN_FRAME_RATE = 1
+    const val DEFAULT_FRAME_RATE = 16
+    const val MAX_FRAME_RATE = 30
     const val DEFAULT_PROMPT = "gentle cinematic motion, natural camera movement, high quality"
     const val DEFAULT_ASPECT_RATIO = "1:1 (Square)"
 
@@ -32,6 +35,15 @@ internal object SingleI2VConfig {
         ?.roundToInt()
         ?.coerceIn(MIN_DURATION_SECONDS, MAX_DURATION_SECONDS)
         ?: DEFAULT_DURATION_SECONDS
+
+    fun durationInputValue(value: Float): String =
+        value.roundToInt().coerceIn(MIN_DURATION_SECONDS, MAX_DURATION_SECONDS).toString()
+
+    fun clampFrameRate(value: String?): Int = value
+        ?.toFloatOrNull()
+        ?.roundToInt()
+        ?.coerceIn(MIN_FRAME_RATE, MAX_FRAME_RATE)
+        ?: DEFAULT_FRAME_RATE
 
     fun normalizeAspectRatio(value: String?): String = value
         ?.trim()

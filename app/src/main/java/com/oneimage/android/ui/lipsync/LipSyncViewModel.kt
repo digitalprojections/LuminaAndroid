@@ -27,6 +27,10 @@ import com.oneimage.android.api.OneImageQueueStatus
 import com.oneimage.android.api.OneImageTask
 import com.oneimage.android.api.OneImageTaskResult
 import com.oneimage.android.api.OneImageWebRtcClient
+import com.oneimage.android.api.WorkflowPricingConfig
+import com.oneimage.android.api.WorkflowPricingRepository
+import com.oneimage.android.api.lipSyncCredits
+import com.oneimage.android.ui.shared.savedAssetFilename
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -45,7 +49,6 @@ import kotlin.math.roundToInt
 
 private const val TASK_HISTORY_LIMIT = 250L
 private const val ENGINE_STATUS_STALE_MS = 90_000L
-private const val LIPSYNC_CREDITS_PER_SECOND = 4
 private const val MAX_LIPSYNC_AUDIO_SECONDS = 600f
 private const val DEFAULT_LIPSYNC_PROMPT = "person singing naturally, expressive lip movement, cinematic lighting"
 
@@ -82,6 +85,7 @@ data class LipSyncUiState(
     val results: List<OneImageTaskResult> = emptyList(),
     val history: List<OneImageTask> = emptyList(),
     val profile: OneImageAccountProfile? = null,
+    val pricing: WorkflowPricingConfig = WorkflowPricingConfig(),
     val engineReady: Boolean = false,
     val queueStatus: OneImageQueueStatus? = null
 ) {
@@ -102,7 +106,7 @@ data class LipSyncUiState(
         }
 
     val estimatedCredits: Int
-        get() = (ceil(durationSeconds.coerceAtLeast(0.1f)).toInt().coerceAtLeast(1) * LIPSYNC_CREDITS_PER_SECOND).coerceAtLeast(4)
+        get() = pricing.lipSyncCredits(durationSeconds).coerceAtLeast(pricing.oneLipSyncPerSecond.coerceAtLeast(1))
 
     val hasEnoughCredits: Boolean
         get() = profile?.hasEnoughCredits(estimatedCredits) == true
@@ -127,6 +131,11 @@ class LipSyncViewModel : ViewModel() {
         viewModelScope.launch {
             com.oneimage.android.api.AccountManager.profileFlow.collect { profile ->
                 _uiState.value = _uiState.value.copy(profile = profile)
+            }
+        }
+        viewModelScope.launch {
+            WorkflowPricingRepository.pricingFlow.collect { pricing ->
+                _uiState.value = _uiState.value.copy(pricing = pricing)
             }
         }
         authListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
@@ -373,8 +382,9 @@ class LipSyncViewModel : ViewModel() {
         val appContext = context.applicationContext
         viewModelScope.launch {
             try {
-                val savedUri = copyResultToPictures(appContext, result)
-                _uiState.value = _uiState.value.copy(saveMessage = "Saved ${savedUri.lastPathSegment ?: result.filename.ifBlank { result.label }}", error = null)
+                val savedName = savedAssetFilename("Lip Sync", result, "mp4")
+                copyResultToPictures(appContext, result, savedName)
+                _uiState.value = _uiState.value.copy(saveMessage = "Saved $savedName", error = null)
             } catch (error: Exception) {
                 _uiState.value = _uiState.value.copy(error = error.message ?: "Could not save result.")
             }
@@ -537,9 +547,9 @@ class LipSyncViewModel : ViewModel() {
         val fittedHeight = maxOf(256, ((height * scale).roundToInt() / 32) * 32).coerceAtLeast(256)
         return fittedWidth to fittedHeight
     }
-    private suspend fun copyResultToPictures(context: Context, result: OneImageTaskResult): Uri = withContext(Dispatchers.IO) {
+    private suspend fun copyResultToPictures(context: Context, result: OneImageTaskResult, savedName: String): Uri = withContext(Dispatchers.IO) {
         if (result.url.startsWith("webrtc://")) error("This result needs to be restored before saving.")
-        val filename = safeFilename(result.filename.ifBlank { "${result.label}.mp4" })
+        val filename = safeFilename(savedName)
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
             put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")

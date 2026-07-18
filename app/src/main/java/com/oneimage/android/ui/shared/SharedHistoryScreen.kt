@@ -11,6 +11,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -40,6 +42,7 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -72,6 +75,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.google.firebase.Timestamp
@@ -98,6 +102,27 @@ import java.net.URL
 private const val SHARED_HISTORY_LIMIT = 250L
 private val SHARED_HISTORY_ACTIVE_STATES = setOf("pending", "processing", "initializing")
 private val SHARED_HISTORY_IMAGE_EXTENSIONS = setOf(".png", ".jpg", ".jpeg", ".webp", ".gif")
+
+private data class PreviewSizeOption(val key: String, val label: String, val height: Dp)
+private data class PreviewFrameOption(val key: String, val label: String, val ratio: Float?)
+private data class PreviewFitOption(val key: String, val label: String, val contentScale: ContentScale)
+
+private val PREVIEW_SIZE_OPTIONS = listOf(
+    PreviewSizeOption("compact", "S", 156.dp),
+    PreviewSizeOption("medium", "M", 204.dp),
+    PreviewSizeOption("large", "L", 260.dp)
+)
+private val PREVIEW_FRAME_OPTIONS = listOf(
+    PreviewFrameOption("auto", "Auto", null),
+    PreviewFrameOption("square", "1:1", 1f),
+    PreviewFrameOption("portrait", "9:16", 9f / 16f),
+    PreviewFrameOption("story", "4:5", 4f / 5f),
+    PreviewFrameOption("wide", "16:9", 16f / 9f)
+)
+private val PREVIEW_FIT_OPTIONS = listOf(
+    PreviewFitOption("fit", "Fit", ContentScale.Fit),
+    PreviewFitOption("fill", "Fill", ContentScale.Crop)
+)
 
 data class SharedHistorySpec(
     val workflowKey: String,
@@ -138,6 +163,9 @@ fun SharedHistoryScreen(
     var history by remember(spec.workflowKey) { mutableStateOf<List<OneImageTask>>(emptyList()) }
     var selectedTaskId by rememberSaveable(spec.workflowKey) { mutableStateOf<String?>(null) }
     var selectedResultIndex by rememberSaveable(spec.workflowKey) { mutableStateOf(0) }
+    var previewSizeKey by rememberSaveable(spec.workflowKey) { mutableStateOf(PREVIEW_SIZE_OPTIONS.first().key) }
+    var previewFrameKey by rememberSaveable(spec.workflowKey) { mutableStateOf(PREVIEW_FRAME_OPTIONS.first().key) }
+    var previewFitKey by rememberSaveable(spec.workflowKey) { mutableStateOf(PREVIEW_FIT_OPTIONS.first().key) }
     var message by remember(spec.workflowKey) { mutableStateOf<String?>(null) }
     var transport by remember(spec.workflowKey) { mutableStateOf<OneImageWebRtcClient?>(null) }
     var cancelTask by remember(spec.workflowKey) { mutableStateOf<OneImageTask?>(null) }
@@ -150,7 +178,14 @@ fun SharedHistoryScreen(
 
         scope.launch {
             message = "Saving files..."
-            runCatching { exportTaskResultsToFolder(context, folderUri, task) }
+            runCatching {
+                exportTaskResultsToFolder(
+                    context = context,
+                    folderUri = folderUri,
+                    task = task,
+                    workflowName = spec.title.removeSuffix(" History")
+                )
+            }
                 .onSuccess { count ->
                     message = "Saved $count file${if (count == 1) "" else "s"} to selected folder."
                 }
@@ -284,6 +319,9 @@ fun SharedHistoryScreen(
     }
     val selectedResult = selectedTask?.results?.getOrNull(selectedResultIndex) ?: selectedTask?.results?.firstOrNull()
     val selectedAvailability = selectedTask?.let(LocalTaskResultStore::availability)
+    val previewSize = PREVIEW_SIZE_OPTIONS.firstOrNull { it.key == previewSizeKey } ?: PREVIEW_SIZE_OPTIONS.first()
+    val previewFrame = PREVIEW_FRAME_OPTIONS.firstOrNull { it.key == previewFrameKey } ?: PREVIEW_FRAME_OPTIONS.first()
+    val previewFit = PREVIEW_FIT_OPTIONS.firstOrNull { it.key == previewFitKey } ?: PREVIEW_FIT_OPTIONS.first()
 
     Scaffold(
         topBar = {
@@ -318,7 +356,13 @@ fun SharedHistoryScreen(
                 availability = selectedAvailability,
                 resultIndex = selectedResultIndex,
                 resultCount = selectedTask?.results?.size ?: 0,
-                onSelectResult = { selectedResultIndex = it }
+                previewSize = previewSize,
+                previewFrame = previewFrame,
+                previewFit = previewFit,
+                onSelectResult = { selectedResultIndex = it },
+                onPreviewSize = { previewSizeKey = it.key },
+                onPreviewFrame = { previewFrameKey = it.key },
+                onPreviewFit = { previewFitKey = it.key }
             )
 
             if (!message.isNullOrBlank() || selectedTask?.status == "failed") {
@@ -437,9 +481,16 @@ private fun SharedHistoryHeroCard(
     availability: LocalTaskResultAvailability?,
     resultIndex: Int,
     resultCount: Int,
-    onSelectResult: (Int) -> Unit
+    previewSize: PreviewSizeOption,
+    previewFrame: PreviewFrameOption,
+    previewFit: PreviewFitOption,
+    onSelectResult: (Int) -> Unit,
+    onPreviewSize: (PreviewSizeOption) -> Unit,
+    onPreviewFrame: (PreviewFrameOption) -> Unit,
+    onPreviewFit: (PreviewFitOption) -> Unit
 ) {
     val tone = task?.let { sharedHistoryStatusTone(it) }
+    val isImagePreview = result != null && sharedHistoryIsRenderableImage(result)
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -457,27 +508,14 @@ private fun SharedHistoryHeroCard(
                     .padding(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(156.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(
-                                    MaterialTheme.colorScheme.surfaceVariant,
-                                    MaterialTheme.colorScheme.surface
-                                )
-                            )
-                        )
-                ) {
+                SharedHistoryPreviewFrame(previewSize = previewSize, previewFrame = previewFrame) {
                     when {
-                        result != null && sharedHistoryIsRenderableImage(result) -> {
+                        isImagePreview -> {
                             AsyncImage(
                                 model = result.url,
                                 contentDescription = result.label,
                                 modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
+                                contentScale = previewFit.contentScale
                             )
                         }
 
@@ -531,6 +569,16 @@ private fun SharedHistoryHeroCard(
                     }
                 }
 
+                PreviewDisplayControls(
+                    previewSize = previewSize,
+                    previewFrame = previewFrame,
+                    previewFit = previewFit,
+                    showFit = isImagePreview,
+                    onPreviewSize = onPreviewSize,
+                    onPreviewFrame = onPreviewFrame,
+                    onPreviewFit = onPreviewFit
+                )
+
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                     task?.let {
@@ -562,6 +610,133 @@ private fun SharedHistoryHeroCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SharedHistoryPreviewFrame(
+    previewSize: PreviewSizeOption,
+    previewFrame: PreviewFrameOption,
+    content: @Composable BoxScope.() -> Unit
+) {
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(previewSize.height)
+            .clip(RoundedCornerShape(14.dp))
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        MaterialTheme.colorScheme.surfaceVariant,
+                        MaterialTheme.colorScheme.surface
+                    )
+                )
+            )
+            .padding(6.dp)
+    ) {
+        val ratio = previewFrame.ratio
+        val frameModifier = if (ratio == null) {
+            Modifier.fillMaxSize()
+        } else {
+            val heightFromWidth = maxWidth / ratio
+            if (heightFromWidth <= maxHeight) {
+                Modifier
+                    .width(maxWidth)
+                    .height(heightFromWidth)
+            } else {
+                Modifier
+                    .width(maxHeight * ratio)
+                    .height(maxHeight)
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .then(frameModifier)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.Black.copy(alpha = 0.14f)),
+            content = content
+        )
+    }
+}
+
+@Composable
+private fun PreviewDisplayControls(
+    previewSize: PreviewSizeOption,
+    previewFrame: PreviewFrameOption,
+    previewFit: PreviewFitOption,
+    showFit: Boolean,
+    onPreviewSize: (PreviewSizeOption) -> Unit,
+    onPreviewFrame: (PreviewFrameOption) -> Unit,
+    onPreviewFit: (PreviewFitOption) -> Unit
+) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        contentPadding = PaddingValues(horizontal = 2.dp)
+    ) {
+        item { PreviewControlLabel("Size") }
+        items(PREVIEW_SIZE_OPTIONS, key = { it.key }) { option ->
+            PreviewControlChip(
+                label = option.label,
+                selected = option == previewSize,
+                onClick = { onPreviewSize(option) }
+            )
+        }
+        item { PreviewControlLabel("Frame") }
+        items(PREVIEW_FRAME_OPTIONS, key = { it.key }) { option ->
+            PreviewControlChip(
+                label = option.label,
+                selected = option == previewFrame,
+                onClick = { onPreviewFrame(option) }
+            )
+        }
+        if (showFit) {
+            item { PreviewControlLabel("Image") }
+            items(PREVIEW_FIT_OPTIONS, key = { it.key }) { option ->
+                PreviewControlChip(
+                    label = option.label,
+                    selected = option == previewFit,
+                    onClick = { onPreviewFit(option) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreviewControlLabel(label: String) {
+    Text(
+        text = label,
+        fontSize = 10.sp,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 2.dp, end = 1.dp)
+    )
+}
+
+@Composable
+private fun PreviewControlChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    OutlinedButton(
+        onClick = onClick,
+        shape = RoundedCornerShape(999.dp),
+        border = BorderStroke(
+            1.dp,
+            if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+        ),
+        colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f) else Color.Transparent,
+            contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        ),
+        contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp),
+        modifier = Modifier.height(30.dp)
+    ) {
+        Text(label, fontSize = 11.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
     }
 }
 
@@ -899,7 +1074,8 @@ private fun isExportableResult(result: OneImageTaskResult): Boolean =
 private suspend fun exportTaskResultsToFolder(
     context: Context,
     folderUri: Uri,
-    task: OneImageTask
+    task: OneImageTask,
+    workflowName: String
 ): Int = withContext(Dispatchers.IO) {
     val results = task.results.filter(::isExportableResult)
     if (results.isEmpty()) error("Restore the task first, then save the files to a folder.")
@@ -917,8 +1093,9 @@ private suspend fun exportTaskResultsToFolder(
         DocumentsContract.getTreeDocumentId(folderUri)
     )
 
+    val exportDate = task.createdAtMs.takeIf { it > 0L } ?: System.currentTimeMillis()
     results.forEachIndexed { index, result ->
-        val filename = exportFilename(result, index)
+        val filename = exportFilename(result, index, workflowName, exportDate)
         val targetUri = DocumentsContract.createDocument(
             resolver,
             parentDocumentUri,
@@ -947,20 +1124,18 @@ private fun openResultInputStream(context: Context, url: String) = when {
     else -> error("This result must be restored before saving.")
 }
 
-private fun exportFilename(result: OneImageTaskResult, index: Int): String {
-    val uriName = runCatching { Uri.parse(result.url).lastPathSegment }.getOrNull().orEmpty()
-    val rawName = result.filename
-        .ifBlank { result.label }
-        .ifBlank { uriName }
-        .ifBlank { "oneimage-result-${index + 1}" }
-        .substringAfterLast('/')
-        .substringAfterLast('\\')
-    val clean = rawName
-        .replace(Regex("[^A-Za-z0-9._ -]"), "_")
-        .trim()
-        .ifBlank { "oneimage-result-${index + 1}" }
-    return if (clean.contains('.')) clean else "$clean.bin"
-}
+private fun exportFilename(
+    result: OneImageTaskResult,
+    index: Int,
+    workflowName: String,
+    dateMillis: Long
+): String = savedAssetFilename(
+    workflowName = workflowName,
+    result = result,
+    defaultExtension = "bin",
+    dateMillis = dateMillis,
+    index = index
+)
 
 private fun mimeTypeForFilename(filename: String): String {
     val extension = filename.substringAfterLast('.', "").lowercase()

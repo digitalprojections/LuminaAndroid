@@ -15,9 +15,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -60,6 +62,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -80,13 +83,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.oneimage.android.BuildConfig
+import com.oneimage.android.api.AccountManager
 import com.oneimage.android.api.KeyframeWorkflowInput
 import com.oneimage.android.api.OneImageApi
+import com.oneimage.android.api.OneImageAccountProfile
 import com.oneimage.android.api.OneImageFileInfo
 import com.oneimage.android.api.LocalTaskResultStore
+import com.oneimage.android.api.OneImageQueueStatus
 import com.oneimage.android.api.OneImageTask
 import com.oneimage.android.api.OneImageTaskResult
 import com.oneimage.android.api.OneImageWebRtcClient
+import com.oneimage.android.api.WorkflowPricingConfig
+import com.oneimage.android.api.WorkflowPricingRepository
 import com.oneimage.android.api.prepareImageTransfer
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
@@ -105,6 +113,7 @@ import java.net.URL
 
 private const val DEFAULT_IMPORTANT_DESCRIPTION = "describe the image in smallest details, describe it as a high definition game asset style image asset. Do not describe as pixel art, because it is high definition"
 private const val TASK_HISTORY_LIMIT = 250L
+private const val ENGINE_STATUS_STALE_MS = 90_000L
 private const val STORY_PARAGRAPH_LIMIT = 512
 private val STORY_ASPECT_RATIOS = listOf(
     "16:9 (Widescreen)",
@@ -145,7 +154,6 @@ data class WorkflowSpec(
     val title: String,
     val subtitle: String,
     val action: String,
-    val estimatedCredits: String,
     val fileSlots: List<WorkflowFileSlot>,
     val textSlots: List<WorkflowTextSlot>
 )
@@ -157,7 +165,6 @@ object WorkflowSpecs {
         title = "Single I2V",
         subtitle = "One image into a focused clip up to 10 seconds",
         action = "Create Video",
-        estimatedCredits = "12 credits",
         fileSlots = listOf(
             WorkflowFileSlot("singleI2VImage", "Source image", "image/*", "Choose the image to animate.")
         ),
@@ -172,7 +179,6 @@ object WorkflowSpecs {
         title = "Character Replacement",
         subtitle = "Change a character in a short clip",
         action = "Create Clip",
-        estimatedCredits = "4 credits/sec",
         fileSlots = listOf(
             WorkflowFileSlot("characterVideo", "Source video", "video/*", "Use a short video up to 15 seconds."),
             WorkflowFileSlot("characterImage", "Reference image", "image/*", "Choose the identity or character reference.")
@@ -189,7 +195,6 @@ object WorkflowSpecs {
         title = "Story Images",
         subtitle = "Images for story paragraphs",
         action = "Generate Story Images",
-        estimatedCredits = "30 credits",
         fileSlots = listOf(WorkflowFileSlot("qwenImage", "Character reference", "image/*", "Use the visual reference for the story panels.")),
         textSlots = listOf(
             WorkflowTextSlot("storyPrompt", "Story paragraphs", "One paragraph per generated image.", "", 5),
@@ -203,7 +208,6 @@ object WorkflowSpecs {
         title = "Game Mesh",
         subtitle = "Draft 3D model from one image",
         action = "Create Model",
-        estimatedCredits = "50 credits",
         fileSlots = listOf(WorkflowFileSlot("meshImage", "Source image", "image/*", "Choose the object or asset image.")),
         textSlots = emptyList()
     )
@@ -214,7 +218,6 @@ object WorkflowSpecs {
         title = "Game Asset Upscaler",
         subtitle = "Clean, larger game art",
         action = "Improve Asset",
-        estimatedCredits = "30 credits",
         fileSlots = listOf(WorkflowFileSlot("upscalerImage", "Small game asset", "image/*", "Choose a sprite, icon, tile, or UI asset.")),
         textSlots = listOf(
             WorkflowTextSlot("description", "Description", "Optional material, mood, or art direction.", "", 3),
@@ -229,7 +232,6 @@ object WorkflowSpecs {
         title = "Keyframes",
         subtitle = "Longer video from selected key images",
         action = "Create Video",
-        estimatedCredits = "30+ credits",
         fileSlots = listOf(
             WorkflowFileSlot("image_0", "First keyframe", "image/*", "Choose the opening image."),
             WorkflowFileSlot("image_1", "Second keyframe", "image/*", "Choose the target image.")
@@ -251,6 +253,8 @@ fun WorkflowScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val firestore = remember { FirebaseFirestore.getInstance() }
+    val workflowPricing by WorkflowPricingRepository.pricingFlow.collectAsState()
+    val profile by AccountManager.profileFlow.collectAsState()
     val baseUrl = BuildConfig.ONEIMAGE_API_BASE_URL.ifBlank { "https://genstudio.web.app/" }
     val clientId = remember { FirebaseAuth.getInstance().currentUser?.uid.orEmpty() }
 
@@ -264,6 +268,7 @@ fun WorkflowScreen(
             if (spec.kind == WorkflowKind.StoryImages) put("aspectRatio", STORY_ASPECT_RATIOS.first())
             if (spec.kind == WorkflowKind.SingleI2V) {
                 put("duration", SingleI2VConfig.DEFAULT_DURATION_SECONDS.toString())
+                put("frameRate", SingleI2VConfig.DEFAULT_FRAME_RATE.toString())
                 put("resolutionMode", "input")
                 put("aspectRatio", SingleI2VConfig.DEFAULT_ASPECT_RATIO)
             }
@@ -279,6 +284,8 @@ fun WorkflowScreen(
     var history by remember(spec.kind) { mutableStateOf<List<OneImageTask>>(emptyList()) }
     var transport by remember { mutableStateOf<OneImageWebRtcClient?>(null) }
     var cancelAction by remember(spec.kind) { mutableStateOf<(() -> Unit)?>(null) }
+    var engineReady by remember(spec.kind) { mutableStateOf(false) }
+    var queueStatus by remember(spec.kind) { mutableStateOf<OneImageQueueStatus?>(null) }
 
     val surfaceGradient = Brush.verticalGradient(
         colors = listOf(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.background)
@@ -363,6 +370,37 @@ fun WorkflowScreen(
         }
     }
 
+    DisposableEffect(clientId, spec.kind) {
+        if (clientId.isBlank()) {
+            engineReady = false
+            queueStatus = null
+            onDispose { }
+        } else {
+            val engineKey = workflowEngineStatusKey(spec.kind)
+            val enginesListener = firestore.collection("system_status").document("engines")
+                .addSnapshotListener { snapshot, _ ->
+                    val data = snapshot?.data
+                    val lastSeen = firestoreMillis(data?.get("lastSeen"))
+                    val fresh = lastSeen > 0L && System.currentTimeMillis() - lastSeen <= ENGINE_STATUS_STALE_MS
+                    engineReady = fresh && data?.get(engineKey) == true
+                }
+            val queueListener = firestore.collection("system_status").document("queue")
+                .addSnapshotListener { snapshot, _ ->
+                    val data = snapshot?.data
+                    queueStatus = if (data == null) null else OneImageQueueStatus(
+                        totalPending = (data["totalPending"] as? Number)?.toInt() ?: 0,
+                        totalProcessing = (data["totalProcessing"] as? Number)?.toInt() ?: 0,
+                        estimatedWaitTime = (data["estimatedWaitTime"] as? Number)?.toInt() ?: 0
+                    )
+                }
+
+            onDispose {
+                enginesListener.remove()
+                queueListener.remove()
+            }
+        }
+    }
+
     val activeFileSlots = if (spec.kind == WorkflowKind.Keyframes) {
         (0 until keyframeCount).map(::keyframeFileSlot)
     } else {
@@ -370,6 +408,7 @@ fun WorkflowScreen(
     }
     val storyParagraphs = if (spec.kind == WorkflowKind.StoryImages) storyParagraphs(textValues["storyPrompt"].orEmpty()) else emptyList()
     val storyPromptLimitExceeded = storyParagraphs.any { it.length > STORY_PARAGRAPH_LIMIT }
+    val estimatedCreditsForBalance = workflowEstimatedCreditsValue(spec.kind, workflowPricing, textValues, keyframeCount)
     val ready = activeFileSlots.all { fileInfos[it.id] != null } && when (spec.kind) {
         WorkflowKind.Keyframes -> keyframeCount >= 2
         WorkflowKind.StoryImages -> storyParagraphs.isNotEmpty() && !storyPromptLimitExceeded
@@ -414,6 +453,11 @@ fun WorkflowScreen(
             )
         }
     ) { padding ->
+        val bottomSystemPadding = WindowInsets.systemBars
+            .only(WindowInsetsSides.Bottom)
+            .asPaddingValues()
+            .calculateBottomPadding()
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -422,20 +466,29 @@ fun WorkflowScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .imePadding()
                     .verticalScroll(rememberScrollState())
                     .padding(
                         start = 16.dp, 
                         end = 16.dp, 
                         top = padding.calculateTopPadding() + 16.dp, 
-                        bottom = padding.calculateBottomPadding() + 16.dp
+                        bottom = padding.calculateBottomPadding() + bottomSystemPadding + 32.dp
                     ),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            WorkflowStatusStrip(
+                engineReady = engineReady,
+                queueStatus = queueStatus,
+                profile = profile,
+                hasEnoughCredits = profile?.hasEnoughCredits(estimatedCreditsForBalance) == true
+            )
+
             StatusCard(status = status, task = currentTask, isBusy = isBusy, error = error)
 
             if (spec.kind == WorkflowKind.Keyframes) {
                 KeyframesControls(
                     count = keyframeCount,
+                    selectedUris = selectedUris,
                     fileInfos = fileInfos,
                     textValues = textValues,
                     enabled = !isBusy,
@@ -459,6 +512,7 @@ fun WorkflowScreen(
                 spec.fileSlots.forEach { slot ->
                     FileSlotCard(
                         slot = slot,
+                        selectedUri = selectedUris[slot.id],
                         fileInfo = fileInfos[slot.id],
                         duration = durations[slot.id],
                         enabled = !isBusy,
@@ -577,7 +631,7 @@ fun WorkflowScreen(
                             Spacer(modifier = Modifier.width(10.dp))
                             Text(status, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.Black)
                         } else {
-                            Text("${spec.action} · ${spec.estimatedCredits}", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Black)
+                            Text("${spec.action} · ${workflowEstimatedCreditsLabel(spec.kind, workflowPricing)}", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Black)
                             Spacer(modifier = Modifier.width(8.dp))
                             Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.Black)
                         }
@@ -667,16 +721,88 @@ private fun StatusCard(status: String, task: OneImageTask?, isBusy: Boolean, err
 }
 
 @Composable
-private fun FileSlotCard(slot: WorkflowFileSlot, fileInfo: OneImageFileInfo?, duration: Float?, enabled: Boolean, onPick: () -> Unit) {
+private fun WorkflowStatusStrip(
+    engineReady: Boolean,
+    queueStatus: OneImageQueueStatus?,
+    profile: OneImageAccountProfile?,
+    hasEnoughCredits: Boolean
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        WorkflowStatusChip(
+            label = if (engineReady) "READY" else "CONNECTING",
+            positive = engineReady,
+            modifier = Modifier.weight(1f)
+        )
+        WorkflowStatusChip(
+            label = "${(queueStatus?.totalPending ?: 0) + (queueStatus?.totalProcessing ?: 0)} queued",
+            positive = true,
+            modifier = Modifier.weight(1f)
+        )
+        WorkflowStatusChip(
+            label = profile?.creditBalanceText ?: "Sign in",
+            positive = profile != null && hasEnoughCredits,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun WorkflowStatusChip(label: String, positive: Boolean, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier.height(36.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = if (positive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer
+    ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 8.dp)) {
+            Text(
+                label,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = if (positive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
+            )
+        }
+    }
+}
+
+@Composable
+private fun FileSlotCard(
+    slot: WorkflowFileSlot,
+    selectedUri: Uri?,
+    fileInfo: OneImageFileInfo?,
+    duration: Float?,
+    enabled: Boolean,
+    onPick: () -> Unit
+) {
+    val showImagePreview = selectedUri != null && slot.mime.startsWith("image")
+
     Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
         Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(
                 modifier = Modifier
-                    .size(48.dp)
-                    .background(PrimaryGradient, CircleShape),
+                    .size(if (showImagePreview) 64.dp else 48.dp)
+                    .clip(if (showImagePreview) RoundedCornerShape(12.dp) else CircleShape)
+                    .background(if (showImagePreview) MaterialTheme.colorScheme.surface else Color.Transparent)
+                    .then(
+                        if (showImagePreview) {
+                            Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
+                        } else {
+                            Modifier.background(PrimaryGradient, CircleShape)
+                        }
+                    ),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Default.FileUpload, contentDescription = null, tint = Color.Black)
+                if (showImagePreview) {
+                    AsyncImage(
+                        model = selectedUri,
+                        contentDescription = "${slot.label} preview",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Icon(Icons.Default.FileUpload, contentDescription = null, tint = Color.Black)
+                }
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(slot.label, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
@@ -691,6 +817,7 @@ private fun FileSlotCard(slot: WorkflowFileSlot, fileInfo: OneImageFileInfo?, du
 @Composable
 private fun KeyframesControls(
     count: Int,
+    selectedUris: Map<String, Uri>,
     fileInfos: Map<String, OneImageFileInfo>,
     textValues: MutableMap<String, String>,
     enabled: Boolean,
@@ -723,7 +850,14 @@ private fun KeyframesControls(
                             }
                         }
                     }
-                    FileSlotCard(slot = slot, fileInfo = fileInfos[slot.id], duration = null, enabled = enabled, onPick = { onPick(slot) })
+                    FileSlotCard(
+                        slot = slot,
+                        selectedUri = selectedUris[slot.id],
+                        fileInfo = fileInfos[slot.id],
+                        duration = null,
+                        enabled = enabled,
+                        onPick = { onPick(slot) }
+                    )
                     OutlinedTextField(
                         value = textValues[keyframePromptId(index)].orEmpty(),
                         onValueChange = { textValues[keyframePromptId(index)] = it },
@@ -788,6 +922,7 @@ private fun SingleI2VControls(
     enabled: Boolean
 ) {
     val duration = SingleI2VConfig.clampDuration(values["duration"])
+    val frameRate = SingleI2VConfig.clampFrameRate(values["frameRate"])
     val resolutionMode = values["resolutionMode"].takeIf { it == "selector" } ?: "input"
     val aspectRatio = SingleI2VConfig.normalizeAspectRatio(values["aspectRatio"])
 
@@ -844,7 +979,7 @@ private fun SingleI2VControls(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text("Video Length", fontWeight = FontWeight.SemiBold)
-                Text("3 to 10 seconds at 25 fps", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("3 to 10 seconds", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Surface(shape = RoundedCornerShape(999.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)) {
                 Text(
@@ -857,10 +992,28 @@ private fun SingleI2VControls(
         }
         Slider(
             value = duration.toFloat(),
-            onValueChange = { values["duration"] = it.toInt().coerceIn(SingleI2VConfig.MIN_DURATION_SECONDS, SingleI2VConfig.MAX_DURATION_SECONDS).toString() },
+            onValueChange = { values["duration"] = SingleI2VConfig.durationInputValue(it) },
             valueRange = SingleI2VConfig.MIN_DURATION_SECONDS.toFloat()..SingleI2VConfig.MAX_DURATION_SECONDS.toFloat(),
             steps = SingleI2VConfig.MAX_DURATION_SECONDS - SingleI2VConfig.MIN_DURATION_SECONDS - 1,
             enabled = enabled
+        )
+
+        OutlinedTextField(
+            value = values["duration"] ?: duration.toString(),
+            onValueChange = { value -> values["duration"] = value.filter { it.isDigit() }.take(2) },
+            enabled = enabled,
+            label = { Text("Seconds") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        OutlinedTextField(
+            value = values["frameRate"] ?: SingleI2VConfig.DEFAULT_FRAME_RATE.toString(),
+            onValueChange = { value -> values["frameRate"] = value.filter { it.isDigit() }.take(2) },
+            enabled = enabled,
+            label = { Text("FPS") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }
@@ -1007,6 +1160,7 @@ private suspend fun submitWorkflow(
             prompt = text["prompt"].orEmpty(),
             imageFileInfo = files.getValue("singleI2VImage"),
             duration = SingleI2VConfig.clampDuration(text["duration"]),
+            frameRate = SingleI2VConfig.clampFrameRate(text["frameRate"]),
             resolutionMode = text["resolutionMode"].takeIf { it == "selector" } ?: "input",
             aspectRatio = SingleI2VConfig.normalizeAspectRatio(text["aspectRatio"]),
             inputWidth = dimensions.first,
@@ -1053,6 +1207,41 @@ private fun storySupportingText(kind: WorkflowKind, slotId: String, paragraphs: 
 }
 
 private fun formatSeconds(value: Float): String = "${String.format("%.1f", value)}s"
+
+private fun workflowEstimatedCreditsLabel(kind: WorkflowKind, pricing: WorkflowPricingConfig): String = when (kind) {
+    WorkflowKind.SingleI2V -> "${pricing.singleI2VFlat} credits"
+    WorkflowKind.CharacterReplacement -> "${pricing.characterReplacementPerSecond} credits/sec"
+    WorkflowKind.StoryImages -> "${pricing.qwenImageEditFlat} credits"
+    WorkflowKind.MeshModel -> "${pricing.meshModelFlat} credits"
+    WorkflowKind.GameAssetUpscaler -> "${pricing.gameAssetUpscalerFlat} credits"
+    WorkflowKind.Keyframes -> "from ${pricing.oneMotionMinimum} credits"
+}
+
+private fun workflowEstimatedCreditsValue(
+    kind: WorkflowKind,
+    pricing: WorkflowPricingConfig,
+    textValues: Map<String, String>,
+    keyframeCount: Int
+): Int = when (kind) {
+    WorkflowKind.SingleI2V -> pricing.singleI2VFlat
+    WorkflowKind.CharacterReplacement -> {
+        val duration = textValues["duration"]?.toFloatOrNull() ?: 1f
+        (kotlin.math.ceil(duration.coerceAtLeast(0.1f).toDouble()).toInt().coerceAtLeast(1) * pricing.characterReplacementPerSecond)
+    }
+    WorkflowKind.StoryImages -> pricing.qwenImageEditFlat
+    WorkflowKind.MeshModel -> pricing.meshModelFlat
+    WorkflowKind.GameAssetUpscaler -> pricing.gameAssetUpscalerFlat
+    WorkflowKind.Keyframes -> pricing.oneMotionMinimum + (keyframeCount - 2).coerceAtLeast(0) * pricing.oneMotionExtraKeyframe
+}
+
+private fun workflowEngineStatusKey(kind: WorkflowKind): String = when (kind) {
+    WorkflowKind.SingleI2V,
+    WorkflowKind.CharacterReplacement,
+    WorkflowKind.Keyframes -> "video"
+    WorkflowKind.StoryImages,
+    WorkflowKind.MeshModel,
+    WorkflowKind.GameAssetUpscaler -> "image"
+}
 
 private fun mergeResults(current: List<OneImageTaskResult>, incoming: List<OneImageTaskResult>): List<OneImageTaskResult> {
     val merged = current.toMutableList()

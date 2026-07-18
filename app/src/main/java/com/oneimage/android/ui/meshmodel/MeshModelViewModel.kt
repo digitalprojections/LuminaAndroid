@@ -26,6 +26,9 @@ import com.oneimage.android.api.OneImageQueueStatus
 import com.oneimage.android.api.OneImageTask
 import com.oneimage.android.api.OneImageTaskResult
 import com.oneimage.android.api.OneImageWebRtcClient
+import com.oneimage.android.api.WorkflowPricingConfig
+import com.oneimage.android.api.WorkflowPricingRepository
+import com.oneimage.android.ui.shared.savedAssetFilename
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -41,8 +44,6 @@ import kotlin.math.roundToInt
 
 private const val TASK_HISTORY_LIMIT = 250L
 private const val ENGINE_STATUS_STALE_MS = 90_000L
-private const val ESTIMATED_CREDITS = 50
-
 enum class MeshModelPhase {
     Idle,
     Preparing,
@@ -68,6 +69,7 @@ data class MeshModelUiState(
     val results: List<OneImageTaskResult> = emptyList(),
     val history: List<OneImageTask> = emptyList(),
     val profile: OneImageAccountProfile? = null,
+    val pricing: WorkflowPricingConfig = WorkflowPricingConfig(),
     val engineReady: Boolean = false,
     val queueStatus: OneImageQueueStatus? = null
 ) {
@@ -79,7 +81,7 @@ data class MeshModelUiState(
             phase == MeshModelPhase.Restoring
 
     val estimatedCredits: Int
-        get() = ESTIMATED_CREDITS
+        get() = pricing.meshModelFlat
 
     val hasEnoughCredits: Boolean
         get() = profile?.hasEnoughCredits(estimatedCredits) == true
@@ -104,6 +106,11 @@ class MeshModelViewModel : ViewModel() {
         viewModelScope.launch {
             com.oneimage.android.api.AccountManager.profileFlow.collect { profile ->
                 _uiState.value = _uiState.value.copy(profile = profile)
+            }
+        }
+        viewModelScope.launch {
+            WorkflowPricingRepository.pricingFlow.collect { pricing ->
+                _uiState.value = _uiState.value.copy(pricing = pricing)
             }
         }
         authListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
@@ -336,9 +343,10 @@ class MeshModelViewModel : ViewModel() {
         val appContext = context.applicationContext
         viewModelScope.launch {
             try {
-                val savedUri = copyResultToDownloads(appContext, result)
+                val savedName = savedAssetFilename("Game Mesh", result, "glb")
+                copyResultToDownloads(appContext, result, savedName)
                 _uiState.value = _uiState.value.copy(
-                    saveMessage = "Saved ${savedUri.lastPathSegment ?: result.filename.ifBlank { result.label }}",
+                    saveMessage = "Saved $savedName",
                     error = null
                 )
             } catch (error: Exception) {
@@ -517,9 +525,9 @@ class MeshModelViewModel : ViewModel() {
         }
     }
 
-    private suspend fun copyResultToDownloads(context: Context, result: OneImageTaskResult): Uri = withContext(Dispatchers.IO) {
+    private suspend fun copyResultToDownloads(context: Context, result: OneImageTaskResult, savedName: String): Uri = withContext(Dispatchers.IO) {
         if (result.url.startsWith("webrtc://")) error("This result needs to be restored before saving.")
-        val filename = safeFilename(result.filename.ifBlank { "${result.label}.glb" })
+        val filename = safeFilename(savedName)
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
             put(MediaStore.MediaColumns.MIME_TYPE, "model/gltf-binary")

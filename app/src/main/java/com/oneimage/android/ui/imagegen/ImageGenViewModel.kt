@@ -26,6 +26,10 @@ import com.oneimage.android.api.OneImageQueueStatus
 import com.oneimage.android.api.OneImageTask
 import com.oneimage.android.api.OneImageTaskResult
 import com.oneimage.android.api.OneImageWebRtcClient
+import com.oneimage.android.api.WorkflowPricingConfig
+import com.oneimage.android.api.WorkflowPricingRepository
+import com.oneimage.android.api.oneImageCredits
+import com.oneimage.android.ui.shared.savedAssetFilename
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -42,9 +46,6 @@ import kotlin.math.roundToInt
 private const val TASK_HISTORY_LIMIT = 250L
 private const val ENGINE_STATUS_STALE_MS = 90_000L
 private const val MAX_INPUT_IMAGE_LONG_EDGE = 1080f
-private const val STANDARD_CREDITS = 30
-private const val HQ_CREDITS = 50
-
 enum class ImageGenPhase {
     Idle,
     Preparing,
@@ -72,6 +73,7 @@ data class ImageGenUiState(
     val results: List<OneImageTaskResult> = emptyList(),
     val history: List<OneImageTask> = emptyList(),
     val profile: OneImageAccountProfile? = null,
+    val pricing: WorkflowPricingConfig = WorkflowPricingConfig(),
     val engineReady: Boolean = false,
     val queueStatus: OneImageQueueStatus? = null
 ) {
@@ -83,7 +85,7 @@ data class ImageGenUiState(
             phase == ImageGenPhase.Restoring
 
     val estimatedCredits: Int
-        get() = if (isLightning) STANDARD_CREDITS else HQ_CREDITS
+        get() = pricing.oneImageCredits(isLightning)
 
     val hasEnoughCredits: Boolean
         get() = profile?.hasEnoughCredits(estimatedCredits) == true
@@ -108,6 +110,11 @@ class ImageGenViewModel : ViewModel() {
         viewModelScope.launch {
             com.oneimage.android.api.AccountManager.profileFlow.collect { profile ->
                 _uiState.value = _uiState.value.copy(profile = profile)
+            }
+        }
+        viewModelScope.launch {
+            WorkflowPricingRepository.pricingFlow.collect { pricing ->
+                _uiState.value = _uiState.value.copy(pricing = pricing)
             }
         }
         authListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
@@ -361,9 +368,10 @@ class ImageGenViewModel : ViewModel() {
         val appContext = context.applicationContext
         viewModelScope.launch {
             try {
-                val savedUri = copyResultToPictures(appContext, result)
+                val savedName = savedAssetFilename("Image Generation", result, "png")
+                copyResultToPictures(appContext, result, savedName)
                 _uiState.value = _uiState.value.copy(
-                    saveMessage = "Saved ${savedUri.lastPathSegment ?: result.filename.ifBlank { result.label }}",
+                    saveMessage = "Saved $savedName",
                     error = null
                 )
             } catch (error: Exception) {
@@ -554,9 +562,9 @@ class ImageGenViewModel : ViewModel() {
         }
     }
 
-    private suspend fun copyResultToPictures(context: Context, result: OneImageTaskResult): Uri = withContext(Dispatchers.IO) {
+    private suspend fun copyResultToPictures(context: Context, result: OneImageTaskResult, savedName: String): Uri = withContext(Dispatchers.IO) {
         if (result.url.startsWith("webrtc://")) error("This result needs to be restored before saving.")
-        val filename = safeFilename(result.filename.ifBlank { "${result.label}.png" })
+        val filename = safeFilename(savedName)
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, filename)
             put(MediaStore.Images.Media.MIME_TYPE, "image/png")
