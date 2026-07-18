@@ -21,6 +21,7 @@ data class WorkflowPricingConfig(
     val oneLipSyncPerSecond: Int = 4,
     val characterReplacementPerSecond: Int = 4,
     val qwenImageEditFlat: Int = 30,
+    val refRestyleFlat: Int = 24,
     val meshModelFlat: Int = 50,
     val gameAssetUpscalerFlat: Int = 30
 ) {
@@ -39,6 +40,7 @@ data class WorkflowPricingConfig(
                 oneLipSyncPerSecond = number(data, "oneLipSyncPerSecond", defaults.oneLipSyncPerSecond),
                 characterReplacementPerSecond = number(data, "characterReplacementPerSecond", defaults.characterReplacementPerSecond),
                 qwenImageEditFlat = number(data, "qwenImageEditFlat", defaults.qwenImageEditFlat),
+                refRestyleFlat = number(data, "refRestyleFlat", defaults.refRestyleFlat),
                 meshModelFlat = number(data, "meshModelFlat", defaults.meshModelFlat),
                 gameAssetUpscalerFlat = number(data, "gameAssetUpscalerFlat", defaults.gameAssetUpscalerFlat)
             )
@@ -117,4 +119,3 @@ fun WorkflowPricingConfig.lipSyncCredits(durationSeconds: Float): Int =
 
 fun WorkflowPricingConfig.characterReplacementCredits(durationSeconds: Float): Int =
     ceil(durationSeconds.coerceAtLeast(0.1f).toDouble()).toInt().coerceAtLeast(1) * characterReplacementPerSecond
-

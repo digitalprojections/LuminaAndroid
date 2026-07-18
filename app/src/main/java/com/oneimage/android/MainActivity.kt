@@ -150,6 +150,13 @@ class MainActivity : ComponentActivity() {
                                     onHistory = { navController.navigate(Screen.History(SharedHistorySpecs.StoryImages.workflowKey)) }
                                 )
                             }
+                            composable<Screen.RefRestyle> {
+                                WorkflowScreen(
+                                    spec = WorkflowSpecs.RefRestyle,
+                                    onBack = { goBackToDashboard(navController) },
+                                    onHistory = { navController.navigate(Screen.History(SharedHistorySpecs.RefRestyle.workflowKey)) }
+                                )
+                            }
                             composable<Screen.MeshModel> {
                                 MeshModelScreen(
                                     onBack = { goBackToDashboard(navController) },

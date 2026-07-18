@@ -81,7 +81,7 @@ object MobileNotificationManager {
 
         val notification = NotificationCompat.Builder(context, WORKFLOW_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle(title.ifBlank { "OneStudio" })
+            .setContentTitle(title.ifBlank { "GenStudio" })
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setContentIntent(pendingIntent)

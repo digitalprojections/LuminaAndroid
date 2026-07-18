@@ -256,7 +256,7 @@ private fun AppNotificationState.showStoredNotification(notification: StoredNoti
         else -> AppNotificationTone.Info
     }
     show(
-        title = notification.title.ifBlank { "OneStudio" },
+        title = notification.title.ifBlank { "GenStudio" },
         message = notification.body.ifBlank { "Workflow update" },
         tone = tone,
         durationMs = if (tone == AppNotificationTone.Error) 7_000L else 4_800L

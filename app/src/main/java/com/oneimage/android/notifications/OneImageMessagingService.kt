@@ -33,7 +33,7 @@ class OneImageMessagingService : FirebaseMessagingService() {
 
         val title = message.notification?.title
             ?: message.data["title"]
-            ?: "OneStudio"
+            ?: "GenStudio"
         val body = message.notification?.body
             ?: message.data["body"]
             ?: "Workflow update"

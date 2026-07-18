@@ -336,6 +336,28 @@ object OneImageApi {
         fallbackMessage = "Story image generation failed to start."
     )
 
+    suspend fun submitRefRestyleWorkflow(
+        baseUrl: String,
+        clientId: String,
+        imageFileInfo: OneImageFileInfo,
+        referenceImageFileInfo: OneImageFileInfo,
+        prompt: String
+    ): String = postGeneration(
+        baseUrl = baseUrl,
+        path = "/api/ref-restyle/generate",
+        payload = JSONObject()
+            .put("clientId", clientId)
+            .put("prompt", prompt)
+            .put("seed", 0)
+            .put("inputImageName", imageFileInfo.filename)
+            .put("inputImageMimetype", imageFileInfo.mimeType)
+            .put("inputImageSize", imageFileInfo.size)
+            .put("referenceImageName", referenceImageFileInfo.filename)
+            .put("referenceImageMimetype", referenceImageFileInfo.mimeType)
+            .put("referenceImageSize", referenceImageFileInfo.size),
+        fallbackMessage = "Reference restyle failed to start."
+    )
+
     suspend fun submitMeshModelWorkflow(
         baseUrl: String,
         clientId: String,
@@ -575,13 +597,40 @@ object OneImageApi {
 
         client.newCall(requestBuilder.build()).execute().use { response ->
             val text = response.body?.string().orEmpty()
-            val json = JSONObject(text.ifBlank { "{}" })
-            if (!response.isSuccessful || json.optBoolean("success") == false) {
-                error(json.optString("message", fallbackMessage))
+            val json = parseJsonObjectOrNull(text)
+            if (!response.isSuccessful || json?.optBoolean("success") == false) {
+                error(
+                    json?.optString("message")?.takeIf { it.isNotBlank() }
+                        ?: nonJsonApiResponseMessage(response.code, path, text, fallbackMessage)
+                )
             }
-            json.getString("taskId")
+            json?.optString("taskId")?.takeIf { it.isNotBlank() }
+                ?: error(nonJsonApiResponseMessage(response.code, path, text, fallbackMessage))
         }
     }
+
+    private fun parseJsonObjectOrNull(text: String): JSONObject? {
+        val trimmed = text.trimStart()
+        if (!trimmed.startsWith("{")) return null
+        return runCatching { JSONObject(trimmed) }.getOrNull()
+    }
+
+    private fun nonJsonApiResponseMessage(
+        responseCode: Int,
+        path: String,
+        text: String,
+        fallbackMessage: String
+    ): String {
+        val trimmed = text.trimStart()
+        return when {
+            trimmed.startsWith("<!DOCTYPE", ignoreCase = true) || trimmed.startsWith("<html", ignoreCase = true) ->
+                "The server returned a webpage instead of the API response for $path. Please try again after the latest server update is live."
+            responseCode >= 500 ->
+                "The server had a temporary problem. Please try again in a moment."
+            else -> fallbackMessage
+        }
+    }
+
     private fun parseAccountProfile(json: JSONObject): OneImageAccountProfile {
         val credits = when {
             json.has("credits") -> json.optLong("credits", 0)

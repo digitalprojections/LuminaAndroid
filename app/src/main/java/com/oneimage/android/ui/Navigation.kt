@@ -28,6 +28,9 @@ sealed class Screen {
     object StoryImages : Screen()
 
     @Serializable
+    object RefRestyle : Screen()
+
+    @Serializable
     object MeshModel : Screen()
 
     @Serializable

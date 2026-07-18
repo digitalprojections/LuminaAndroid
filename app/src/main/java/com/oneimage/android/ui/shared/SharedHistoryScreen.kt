@@ -139,11 +139,12 @@ object SharedHistorySpecs {
     val SingleI2V = SharedHistorySpec("single_i2v", "single_i2v", "Single I2V History", "Keep one motion result visible while the task list scrolls underneath.", "No single I2V history yet.")
     val CharacterReplacement = SharedHistorySpec("character_replacement", "character_replacement", "Character Replacement History", "Review swaps with a fixed preview and tighter task cards.", "No character replacement history yet.")
     val StoryImages = SharedHistorySpec("qwen_image_edit", "qwen_image_edit", "Story Images History", "Keep one story panel loaded while the rest of the run stays compact below.", "No story image history yet.")
+    val RefRestyle = SharedHistorySpec("ref_restyle", "ref_restyle", "Ref Restyle History", "Keep one restyled image pinned while earlier tasks stay compact below.", "No ref restyle history yet.")
     val MeshModel = SharedHistorySpec("image_to_3d_mesh", "image_to_3d_mesh", "Game Mesh History", "Highlight one selected mesh job while recent work stays scrollable below.", "No mesh history yet.")
     val GameAssetUpscaler = SharedHistorySpec("game_asset_upscaler", "game_asset_upscaler", "Upscaler History", "Hold one upscale result near the top and browse the rest below.", "No upscaler history yet.")
     val Keyframes = SharedHistorySpec("keyframes", "keyframes", "Keyframes History", "Pin one clip in place while keyframe runs stack below.", "No keyframes history yet.")
 
-    private val all = listOf(Image, Video, LipSync, SingleI2V, CharacterReplacement, StoryImages, MeshModel, GameAssetUpscaler, Keyframes)
+    private val all = listOf(Image, Video, LipSync, SingleI2V, CharacterReplacement, StoryImages, RefRestyle, MeshModel, GameAssetUpscaler, Keyframes)
 
     fun fromWorkflowKey(key: String): SharedHistorySpec? = all.firstOrNull { it.workflowKey == key }
 }

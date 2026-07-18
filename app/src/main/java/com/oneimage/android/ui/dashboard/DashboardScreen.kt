@@ -48,6 +48,7 @@ fun DashboardScreen(
         DashboardItem("LipSync", Icons.Default.Mic, Screen.LipSync, "Speaking or singing image clips"),
         DashboardItem("Character Replacement", Icons.Default.FaceRetouchingNatural, Screen.CharacterReplacement, "Change a character in a clip"),
         DashboardItem("Story Images", Icons.Default.AutoStories, Screen.StoryImages, "Images for story paragraphs"),
+        DashboardItem("Ref Restyle", Icons.Default.Palette, Screen.RefRestyle, "Restyle from a reference image"),
         DashboardItem("Game Mesh", Icons.Default.ViewInAr, Screen.MeshModel, "Draft 3D model from an image"),
         DashboardItem("Game Asset Upscaler", Icons.Default.Hd, Screen.GameAssetUpscaler, "Clean, larger game art"),
         DashboardItem("Support", Icons.Default.SupportAgent, Screen.Support, "Search the QA database")

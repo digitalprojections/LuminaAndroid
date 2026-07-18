@@ -68,6 +68,7 @@ fun inferredWorkflows(id: String): List<String> = when {
     id in setOf("workflow-lipsync", "workflow-lipsync-limits") -> listOf("LipSync")
     id in setOf("workflow-keyframes") -> listOf("Keyframes")
     id in setOf("workflow-story-images") -> listOf("Story Images")
+    id in setOf("workflow-ref-restyle") -> listOf("Ref Restyle")
     id in setOf("workflow-character-replacement", "workflow-character-replacement-limits") -> listOf("Character Replacement")
     id in setOf("workflow-game-mesh", "results-mesh-viewer") -> listOf("Game Mesh")
     id in setOf("workflow-upscaler") -> listOf("Game Asset Upscaler")

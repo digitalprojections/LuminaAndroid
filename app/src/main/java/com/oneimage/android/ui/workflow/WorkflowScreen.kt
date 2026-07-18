@@ -128,6 +128,7 @@ enum class WorkflowKind {
     SingleI2V,
     CharacterReplacement,
     StoryImages,
+    RefRestyle,
     MeshModel,
     GameAssetUpscaler,
     Keyframes
@@ -199,6 +200,27 @@ object WorkflowSpecs {
         textSlots = listOf(
             WorkflowTextSlot("storyPrompt", "Story paragraphs", "One paragraph per generated image.", "", 5),
             WorkflowTextSlot("stylePrompt", "Style guidance", "Optional style, mood, camera, or art direction.", "", 3)
+        )
+    )
+
+    val RefRestyle = WorkflowSpec(
+        kind = WorkflowKind.RefRestyle,
+        taskType = "ref_restyle",
+        title = "Ref Restyle",
+        subtitle = "Restyle one image from a reference image",
+        action = "Restyle Image",
+        fileSlots = listOf(
+            WorkflowFileSlot("refRestyleImage", "Source image", "image/*", "Choose the image to restyle."),
+            WorkflowFileSlot("refRestyleReference", "Style reference", "image/*", "Choose the image whose style should be emulated.")
+        ),
+        textSlots = listOf(
+            WorkflowTextSlot(
+                "prompt",
+                "Restyle prompt",
+                "Describe how the source should borrow style, color, material, or lighting from the reference.",
+                "Use the style, color, material, and lighting of the reference image to recreate the source image.",
+                4
+            )
         )
     )
 
@@ -1173,6 +1195,7 @@ private suspend fun submitWorkflow(
         OneImageApi.submitCharacterReplacementWorkflow(baseUrl, clientId, text["prompt"].orEmpty(), files.getValue("characterVideo"), files.getValue("characterImage"), duration, sourceDuration)
     }
     WorkflowKind.StoryImages -> OneImageApi.submitQwenStoryImagesWorkflow(baseUrl, clientId, files.getValue("qwenImage"), text["storyPrompt"].orEmpty(), text["stylePrompt"].orEmpty(), text["aspectRatio"].orEmpty().ifBlank { STORY_ASPECT_RATIOS.first() })
+    WorkflowKind.RefRestyle -> OneImageApi.submitRefRestyleWorkflow(baseUrl, clientId, files.getValue("refRestyleImage"), files.getValue("refRestyleReference"), text["prompt"].orEmpty())
     WorkflowKind.MeshModel -> OneImageApi.submitMeshModelWorkflow(baseUrl, clientId, files.getValue("meshImage"))
     WorkflowKind.GameAssetUpscaler -> OneImageApi.submitGameAssetUpscalerWorkflow(baseUrl, clientId, files.getValue("upscalerImage"), text["description"].orEmpty(), text["importantDescription"].orEmpty(), text["negativePrompt"].orEmpty())
     WorkflowKind.Keyframes -> OneImageApi.submitKeyframesWorkflow(
@@ -1212,6 +1235,7 @@ private fun workflowEstimatedCreditsLabel(kind: WorkflowKind, pricing: WorkflowP
     WorkflowKind.SingleI2V -> "${pricing.singleI2VFlat} credits"
     WorkflowKind.CharacterReplacement -> "${pricing.characterReplacementPerSecond} credits/sec"
     WorkflowKind.StoryImages -> "${pricing.qwenImageEditFlat} credits"
+    WorkflowKind.RefRestyle -> "${pricing.refRestyleFlat} credits"
     WorkflowKind.MeshModel -> "${pricing.meshModelFlat} credits"
     WorkflowKind.GameAssetUpscaler -> "${pricing.gameAssetUpscalerFlat} credits"
     WorkflowKind.Keyframes -> "from ${pricing.oneMotionMinimum} credits"
@@ -1229,6 +1253,7 @@ private fun workflowEstimatedCreditsValue(
         (kotlin.math.ceil(duration.coerceAtLeast(0.1f).toDouble()).toInt().coerceAtLeast(1) * pricing.characterReplacementPerSecond)
     }
     WorkflowKind.StoryImages -> pricing.qwenImageEditFlat
+    WorkflowKind.RefRestyle -> pricing.refRestyleFlat
     WorkflowKind.MeshModel -> pricing.meshModelFlat
     WorkflowKind.GameAssetUpscaler -> pricing.gameAssetUpscalerFlat
     WorkflowKind.Keyframes -> pricing.oneMotionMinimum + (keyframeCount - 2).coerceAtLeast(0) * pricing.oneMotionExtraKeyframe
@@ -1239,6 +1264,7 @@ private fun workflowEngineStatusKey(kind: WorkflowKind): String = when (kind) {
     WorkflowKind.CharacterReplacement,
     WorkflowKind.Keyframes -> "video"
     WorkflowKind.StoryImages,
+    WorkflowKind.RefRestyle,
     WorkflowKind.MeshModel,
     WorkflowKind.GameAssetUpscaler -> "image"
 }

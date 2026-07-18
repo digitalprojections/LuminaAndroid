@@ -59,6 +59,7 @@ import com.oneimage.android.ui.shared.WorkflowHistoryList
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 private val MESH_VIEWER_BACKGROUND_PRESETS = listOf(
     "#050507", "#111827", "#f8fafc", "#e5e7eb", "#0f766e", "#7c2d12"
@@ -514,15 +515,16 @@ private fun OutputPanel(
                             },
                             update = { webView ->
                                 webView.viewerSource = viewerSource
+                                if (!webView.loadedShell) {
+                                    webView.loadedShell = true
+                                    val baseUrl = "https://$MESH_VIEWER_HOST/"
+                                    webView.loadDataWithBaseURL(baseUrl, MESH_VIEWER_HTML, "text/html", "UTF-8", null)
+                                }
                                 if (webView.loadedRenderUrl != viewerSource.renderUrl) {
                                     webView.loadedRenderUrl = viewerSource.renderUrl
-                                    val html = buildMeshViewerHtml(
-                                        renderUrl = viewerSource.renderUrl,
-                                        viewerBackground = viewerBackground
-                                    )
-                                    val baseUrl = "https://$MESH_VIEWER_HOST/"
-                                    webView.loadDataWithBaseURL(baseUrl, html, "text/html", "UTF-8", null)
-                                } else if (webView.loadedBackground != viewerBackground) {
+                                    applyMeshViewerSource(webView, viewerSource.renderUrl)
+                                }
+                                if (webView.loadedBackground != viewerBackground) {
                                     applyMeshViewerBackground(webView, viewerBackground)
                                 }
                                 webView.loadedBackground = viewerBackground
@@ -653,75 +655,32 @@ private data class MeshViewerSource(
 
 private class MeshViewerWebView(context: Context) : WebView(context) {
     var viewerSource: MeshViewerSource? = null
+    var loadedShell: Boolean = false
     var loadedRenderUrl: String? = null
     var loadedBackground: String? = null
 }
 
 private const val MESH_VIEWER_HOST = "appassets.androidplatform.net"
 
-private fun buildMeshViewerHtml(renderUrl: String, viewerBackground: String): String = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
-        <style>
-            :root { --viewer-bg: $viewerBackground; }
-            body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: var(--viewer-bg); }
-            model-viewer { width: 100%; height: 100%; background-color: var(--viewer-bg); }
-        </style>
-    </head>
-    <body>
-        <model-viewer id="mesh-viewer"
-            src="$renderUrl"
-            camera-controls
-            auto-rotate
-            shadow-intensity="0.7"
-            exposure="1"
-            tone-mapping="neutral"
-            environment-image="neutral"
-            interaction-prompt="none">
-        </model-viewer>
-        <script type="module">
-            const attachMeshViewerLogging = () => {
-                const viewer = document.getElementById('mesh-viewer');
-                if (!viewer) return;
-                viewer.addEventListener('load', () => console.log('Mesh model loaded'));
-                viewer.addEventListener('error', (event) => {
-                    const detail = event?.detail;
-                    const sourceError = detail?.sourceError;
-                    console.error(
-                      'Mesh model failed',
-                      sourceError?.message || detail?.type || 'unknown error'
-                    );
-                });
-            };
-            if (customElements.get('model-viewer')) {
-                attachMeshViewerLogging();
-            } else {
-                customElements.whenDefined('model-viewer').then(attachMeshViewerLogging);
-            }
-        </script>
-    </body>
-    </html>
-""".trimIndent()
+private const val MESH_VIEWER_HTML =
+    "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">" +
+        "<script type=\"module\" src=\"https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js\"></script>" +
+        "<style>:root{--viewer-bg:#050507}body,html{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background-color:var(--viewer-bg)}model-viewer{width:100%;height:100%;background-color:var(--viewer-bg)}</style>" +
+        "</head><body><model-viewer id=\"mesh-viewer\" camera-controls auto-rotate shadow-intensity=\"0.7\" exposure=\"1\" tone-mapping=\"neutral\" environment-image=\"neutral\" interaction-prompt=\"none\"></model-viewer>" +
+        "<script type=\"module\">const attach=()=>{const viewer=document.getElementById('mesh-viewer');if(!viewer)return;viewer.addEventListener('load',()=>console.log('Mesh model loaded'));viewer.addEventListener('error',(event)=>{const detail=event?.detail;const sourceError=detail?.sourceError;console.error('Mesh model failed',sourceError?.message||detail?.type||'unknown error');});};if(customElements.get('model-viewer')){attach();}else{customElements.whenDefined('model-viewer').then(attach);}</script>" +
+        "</body></html>"
+
+private fun applyMeshViewerSource(webView: WebView, renderUrl: String) {
+    webView.evaluateJavascript(
+        "(() => { const viewer = document.getElementById('mesh-viewer'); if (viewer) viewer.src = ${JSONObject.quote(renderUrl)}; return true; })();",
+        null
+    )
+}
 
 private fun applyMeshViewerBackground(webView: WebView, viewerBackground: String) {
-    val escapedBackground = viewerBackground
-        .replace("\\", "\\\\")
-        .replace("'", "\\'")
+    val background = JSONObject.quote(viewerBackground)
     webView.evaluateJavascript(
-        """
-        (() => {
-          document.documentElement.style.setProperty('--viewer-bg', '$escapedBackground');
-          const viewer = document.getElementById('mesh-viewer');
-          if (viewer) {
-            viewer.style.backgroundColor = '$escapedBackground';
-          }
-          document.body.style.backgroundColor = '$escapedBackground';
-          return true;
-        })();
-        """.trimIndent(),
+        "(() => { document.documentElement.style.setProperty('--viewer-bg', $background); const viewer = document.getElementById('mesh-viewer'); if (viewer) viewer.style.backgroundColor = $background; document.body.style.backgroundColor = $background; return true; })();",
         null
     )
 }
