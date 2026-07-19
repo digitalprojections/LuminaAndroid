@@ -1,6 +1,7 @@
 package com.oneimage.android.api
 
 import android.net.Uri
+import androidx.core.net.toUri
 import com.oneimage.android.OneImageApplication
 import org.json.JSONObject
 import java.io.File
@@ -32,7 +33,7 @@ object LocalTaskResultStore {
             )
         }
 
-        val sourceUri = Uri.parse(file.url)
+        val sourceUri = file.url.toUri()
         val context = OneImageApplication.appContext
         val taskDirectory = taskDirectory(taskId).apply { mkdirs() }
         val key = resultKey(file.filename, file.label, file.fileId)

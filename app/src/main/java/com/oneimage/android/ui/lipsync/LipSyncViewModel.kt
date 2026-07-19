@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.Timestamp
@@ -84,7 +85,6 @@ data class LipSyncUiState(
     val currentTaskId: String? = null,
     val currentTask: OneImageTask? = null,
     val results: List<OneImageTaskResult> = emptyList(),
-    val history: List<OneImageTask> = emptyList(),
     val profile: OneImageAccountProfile? = null,
     val pricing: WorkflowPricingConfig = WorkflowPricingConfig(),
     val engineReady: Boolean = false,
@@ -146,7 +146,7 @@ class LipSyncViewModel : ViewModel() {
             val user = firebaseAuth.currentUser
             detachUserListeners()
             if (user == null) {
-                _uiState.value = _uiState.value.copy(engineReady = false, queueStatus = null, history = emptyList())
+                _uiState.value = _uiState.value.copy(engineReady = false, queueStatus = null)
                 return@AuthStateListener
             }
             listenToTasks(user.uid)
@@ -365,7 +365,7 @@ class LipSyncViewModel : ViewModel() {
                 loadTask(task)
                 _uiState.value = _uiState.value.copy(phase = LipSyncPhase.Restoring, statusMessage = "Restoring result files...", error = null)
                 val clientId = currentClientId(fallbackClientId)
-                val transport = webRtcClient?.takeIf { it.isOpen() } ?: createTransport(appContext, clientId).also {
+                val transport = webRtcClient?.takeIf { it.isOpenFor(clientId) } ?: createTransport(appContext, clientId).also {
                     webRtcClient?.close()
                     webRtcClient = it
                     val connected = it.connect()
@@ -423,6 +423,18 @@ class LipSyncViewModel : ViewModel() {
                 val result = LocalTaskResultStore.persistReceivedFile(file)
                 val current = _uiState.value
                 _uiState.value = current.copy(results = mergeResults(current.results, listOf(result)), phase = if (current.phase == LipSyncPhase.Restoring) LipSyncPhase.Completed else current.phase, statusMessage = if (current.phase == LipSyncPhase.Restoring) "Completed" else current.statusMessage, error = null)
+            },
+            onDisconnected = { message ->
+                val current = _uiState.value
+                if (current.phase == LipSyncPhase.Restoring) {
+                    _uiState.value = current.copy(
+                        phase = LipSyncPhase.Completed,
+                        statusMessage = "Restore interrupted",
+                        error = message
+                    )
+                } else {
+                    _uiState.value = current.copy(statusMessage = message)
+                }
             }
         )
 
@@ -476,7 +488,6 @@ class LipSyncViewModel : ViewModel() {
                 if (error != null || snapshot == null) return@addSnapshotListener
                 val tasks = snapshot.documents.mapNotNull(::taskFromDocument).filter { it.type == "lipsync" }
                 val activeTaskId = _uiState.value.currentTaskId
-                _uiState.value = _uiState.value.copy(history = tasks)
                 val active = tasks.firstOrNull { it.id == activeTaskId } ?: tasks.firstOrNull { activeTaskId == null && it.status in setOf("pending", "processing", "initializing") }
                 if (active != null) applyTaskSnapshot(active)
             }
@@ -591,7 +602,7 @@ class LipSyncViewModel : ViewModel() {
 
     private fun openResultStream(context: Context, url: String) = when {
         url.startsWith("file:") -> File(URI(url)).inputStream()
-        url.startsWith("content:") -> context.contentResolver.openInputStream(Uri.parse(url)) ?: error("Could not read result file.")
+        url.startsWith("content:") -> context.contentResolver.openInputStream(url.toUri()) ?: error("Could not read result file.")
         url.startsWith("http://") || url.startsWith("https://") -> URL(url).openStream()
         else -> error("Unsupported result URL.")
     }

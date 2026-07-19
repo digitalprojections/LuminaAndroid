@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 
 data class AccountUiState(
     val isLoading: Boolean = false,
+    val isAcceptingLegal: Boolean = false,
     val profile: OneImageAccountProfile? = null,
     val error: String? = null
 )
@@ -37,12 +38,35 @@ class AccountViewModel : ViewModel() {
                 OneImageApi.bootstrapAccountProfile(
                     BuildConfig.ONEIMAGE_API_BASE_URL.ifBlank { "https://genstudio.web.app/" }
                 )
-            }.onSuccess { 
-                _uiState.value = _uiState.value.copy(isLoading = false)
+            }.onSuccess { profile ->
+                _uiState.value = _uiState.value.copy(isLoading = false, profile = profile)
             }.onFailure { error ->
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     error = error.message ?: "Could not load account profile."
+                )
+            }
+        }
+    }
+
+    fun acceptLegalAgreements() {
+        if (_uiState.value.isAcceptingLegal) return
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isAcceptingLegal = true, error = null)
+            runCatching {
+                val baseUrl = BuildConfig.ONEIMAGE_API_BASE_URL.ifBlank { "https://genstudio.web.app/" }
+                OneImageApi.acceptLegalAgreements(baseUrl = baseUrl, method = "account_gate")
+                OneImageApi.bootstrapAccountProfile(baseUrl)
+            }.onSuccess { profile ->
+                _uiState.value = _uiState.value.copy(
+                    isAcceptingLegal = false,
+                    profile = profile
+                )
+            }.onFailure { error ->
+                _uiState.value = _uiState.value.copy(
+                    isAcceptingLegal = false,
+                    error = error.message ?: "Could not accept Privacy & Terms."
                 )
             }
         }

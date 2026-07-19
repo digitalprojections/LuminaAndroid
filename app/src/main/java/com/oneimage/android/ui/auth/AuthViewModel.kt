@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
+import com.oneimage.android.BuildConfig
+import com.oneimage.android.api.OneImageApi
 import com.oneimage.android.api.awaitResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -40,7 +42,12 @@ class AuthViewModel : ViewModel() {
             }
             runCatching {
                 val credential = GoogleAuthProvider.getCredential(idToken, null)
-                auth!!.signInWithCredential(credential).awaitResult()
+                val result = auth!!.signInWithCredential(credential).awaitResult()
+                OneImageApi.bootstrapAccountProfile(
+                    baseUrl = BuildConfig.ONEIMAGE_API_BASE_URL.ifBlank { "https://genstudio.web.app/" },
+                    legalAcceptanceMethod = "login_checkbox"
+                )
+                result
             }.onSuccess { result ->
                 result.user?.let { user ->
                     _uiState.value = AuthUiState.Authenticated(user)

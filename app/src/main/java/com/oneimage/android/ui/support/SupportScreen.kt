@@ -20,9 +20,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.ManageSearch
 import androidx.compose.material.icons.filled.CloudDone
-import androidx.compose.material.icons.filled.ManageSearch
 import androidx.compose.material.icons.filled.QuestionAnswer
 import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material3.AssistChip
@@ -100,7 +100,7 @@ fun SupportScreen(
                     value = state.query,
                     onValueChange = viewModel::updateQuery,
                     modifier = Modifier.fillMaxWidth(),
-                    leadingIcon = { Icon(Icons.Default.ManageSearch, contentDescription = null) },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.ManageSearch, contentDescription = null) },
                     label = { Text("Search Firebase support answers") },
                     singleLine = true,
                     shape = RoundedCornerShape(18.dp)
@@ -246,7 +246,7 @@ private fun SupportEscalationStatus(usingFallback: Boolean, error: String?) {
                 AssistChip(
                     onClick = {},
                     label = { Text("AI next") },
-                    leadingIcon = { Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null, modifier = Modifier.size(18.dp)) }
                 )
                 AssistChip(
                     onClick = {},

@@ -1,8 +1,8 @@
 package com.oneimage.android.ui.shared
 
-import android.net.Uri
 import android.widget.MediaController
 import android.widget.VideoView
+import androidx.core.net.toUri
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
@@ -29,7 +29,7 @@ fun ResultVideoPreview(
             val currentUri = videoView.tag as? String
             if (currentUri != result.url) {
                 videoView.tag = result.url
-                videoView.setVideoURI(Uri.parse(result.url))
+                videoView.setVideoURI(result.url.toUri())
                 videoView.requestFocus()
             }
         },

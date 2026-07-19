@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Flag
@@ -31,7 +32,6 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -73,7 +73,6 @@ import coil.compose.AsyncImage
 import com.oneimage.android.api.OneImageTask
 import com.oneimage.android.api.OneImageTaskResult
 import com.oneimage.android.ui.shared.ResultVideoPreview
-import com.oneimage.android.ui.shared.WorkflowHistoryList
 import com.oneimage.android.ui.shared.CancelTaskConfirmationDialog
 import com.oneimage.android.ui.shared.isPlayableVideoResult
 import kotlinx.coroutines.delay
@@ -233,7 +232,7 @@ fun LipSyncScreen(
                 } else {
                     Text("Generate Lip Sync · ${state.estimatedCredits} credits", fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(18.dp))
                 }
             }
 

@@ -63,7 +63,9 @@ data class OneImageAccountProfile(
     val subscriptionStatus: String?,
     val subscriptionPlan: String?,
     val isAdmin: Boolean,
-    val admin: Boolean
+    val admin: Boolean,
+    val acceptedTermsVersion: String?,
+    val acceptedPrivacyVersion: String?
 ) {
     val hasUnlimitedAccess: Boolean
         get() = role == "admin" || subscriptionStatus == "comped" || isAdmin || admin
@@ -88,7 +90,9 @@ data class OneImageAccountProfile(
                 subscriptionStatus = data["subscriptionStatus"]?.toString(),
                 subscriptionPlan = data["subscriptionPlan"]?.toString(),
                 isAdmin = data["isAdmin"] as? Boolean ?: false,
-                admin = data["admin"] as? Boolean ?: false
+                admin = data["admin"] as? Boolean ?: false,
+                acceptedTermsVersion = data["acceptedTermsVersion"]?.toString(),
+                acceptedPrivacyVersion = data["acceptedPrivacyVersion"]?.toString()
             )
         }
     }
@@ -105,9 +109,16 @@ data class OneImageAccountProfile(
 
     val statusLabel: String
         get() = subscriptionStatus?.takeIf { it.isNotBlank() } ?: "unpaid"
+
+    val hasAcceptedCurrentLegal: Boolean
+        get() = acceptedTermsVersion == OneImageApi.CURRENT_TERMS_VERSION &&
+            acceptedPrivacyVersion == OneImageApi.CURRENT_PRIVACY_VERSION
 }
 
 object OneImageApi {
+    const val CURRENT_TERMS_VERSION = "2026-05-27"
+    const val CURRENT_PRIVACY_VERSION = "2026-05-16"
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
@@ -441,6 +452,27 @@ object OneImageApi {
         fallbackMessage = "Could not delete task."
     )
 
+    suspend fun reconcileTasks(baseUrl: String, clientId: String): Int = withContext(Dispatchers.IO) {
+        val payload = JSONObject().put("clientId", clientId)
+        val requestBuilder = Request.Builder()
+            .url("${baseUrl.trimEnd('/')}/api/tasks/reconcile")
+            .post(payload.toString().toRequestBody("application/json".toMediaType()))
+            .addHeader("Content-Type", "application/json")
+
+        FirebaseAuth.getInstance().currentUser?.getIdToken(false)?.awaitResult()?.token?.let { token ->
+            requestBuilder.addHeader("Authorization", "Bearer $token")
+        }
+
+        client.newCall(requestBuilder.build()).execute().use { response ->
+            val text = response.body?.string().orEmpty()
+            val json = JSONObject(text.ifBlank { "{}" })
+            if (!response.isSuccessful || json.optBoolean("success") == false) {
+                error(json.optString("message", "Could not reconcile tasks."))
+            }
+            json.optInt("reconciled", 0)
+        }
+    }
+
     suspend fun getImageTask(baseUrl: String, clientId: String, taskId: String): OneImageTask? = withContext(Dispatchers.IO) {
         val requestBuilder = Request.Builder()
             .url("${baseUrl.trimEnd('/')}/api/tasks/$clientId")
@@ -462,10 +494,18 @@ object OneImageApi {
         }
     }
 
-    suspend fun bootstrapAccountProfile(baseUrl: String): OneImageAccountProfile = withContext(Dispatchers.IO) {
+    suspend fun bootstrapAccountProfile(
+        baseUrl: String,
+        legalAcceptanceMethod: String? = null
+    ): OneImageAccountProfile = withContext(Dispatchers.IO) {
+        val payload = JSONObject()
+        if (!legalAcceptanceMethod.isNullOrBlank()) {
+            payload.put("legalAcceptance", legalAcceptancePayload(legalAcceptanceMethod))
+        }
+
         val requestBuilder = Request.Builder()
             .url("${baseUrl.trimEnd('/')}/api/account/bootstrap")
-            .post("{}".toRequestBody("application/json".toMediaType()))
+            .post(payload.toString().toRequestBody("application/json".toMediaType()))
             .addHeader("Content-Type", "application/json")
 
         val token = FirebaseAuth.getInstance().currentUser?.getIdToken(false)?.awaitResult()?.token
@@ -479,6 +519,31 @@ object OneImageApi {
                 error(json.optString("message", "Could not load account profile."))
             }
             parseAccountProfile(json.getJSONObject("profile"))
+        }
+    }
+
+    suspend fun acceptLegalAgreements(
+        baseUrl: String,
+        method: String = "account_gate"
+    ) = withContext(Dispatchers.IO) {
+        val payload = JSONObject()
+            .put("legalAcceptance", legalAcceptancePayload(method))
+
+        val requestBuilder = Request.Builder()
+            .url("${baseUrl.trimEnd('/')}/api/account/legal-acceptance")
+            .post(payload.toString().toRequestBody("application/json".toMediaType()))
+            .addHeader("Content-Type", "application/json")
+
+        val token = FirebaseAuth.getInstance().currentUser?.getIdToken(false)?.awaitResult()?.token
+            ?: error("Please sign in again.")
+        requestBuilder.addHeader("Authorization", "Bearer $token")
+
+        client.newCall(requestBuilder.build()).execute().use { response ->
+            val text = response.body?.string().orEmpty()
+            val json = JSONObject(text.ifBlank { "{}" })
+            if (!response.isSuccessful || json.optBoolean("success") == false) {
+                error(json.optString("message", "Could not accept Privacy & Terms."))
+            }
         }
     }
 
@@ -649,8 +714,18 @@ object OneImageApi {
             subscriptionStatus = json.optString("subscriptionStatus").ifBlank { null },
             subscriptionPlan = json.optString("subscriptionPlan").ifBlank { null },
             isAdmin = json.optBoolean("isAdmin", false),
-            admin = json.optBoolean("admin", false)
+            admin = json.optBoolean("admin", false),
+            acceptedTermsVersion = json.optString("acceptedTermsVersion").ifBlank { null },
+            acceptedPrivacyVersion = json.optString("acceptedPrivacyVersion").ifBlank { null }
         )
+    }
+
+    private fun legalAcceptancePayload(method: String): JSONObject {
+        return JSONObject()
+            .put("accepted", true)
+            .put("termsVersion", CURRENT_TERMS_VERSION)
+            .put("privacyVersion", CURRENT_PRIVACY_VERSION)
+            .put("method", method)
     }
 
     private fun getDisplayName(contentResolver: ContentResolver, uri: Uri): String? {

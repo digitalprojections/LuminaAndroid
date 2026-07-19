@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.Timestamp
@@ -67,7 +68,6 @@ data class MeshModelUiState(
     val currentTaskId: String? = null,
     val currentTask: OneImageTask? = null,
     val results: List<OneImageTaskResult> = emptyList(),
-    val history: List<OneImageTask> = emptyList(),
     val profile: OneImageAccountProfile? = null,
     val pricing: WorkflowPricingConfig = WorkflowPricingConfig(),
     val engineReady: Boolean = false,
@@ -119,8 +119,7 @@ class MeshModelViewModel : ViewModel() {
             if (user == null) {
                 _uiState.value = _uiState.value.copy(
                     engineReady = false,
-                    queueStatus = null,
-                    history = emptyList()
+                    queueStatus = null
                 )
                 return@AuthStateListener
             }
@@ -209,7 +208,7 @@ class MeshModelViewModel : ViewModel() {
             val clientId = currentClientId(fallbackClientId)
 
             try {
-                val transport = webRtcClient?.takeIf { it.isOpen() } ?: createTransport(appContext, clientId).also {
+                val transport = webRtcClient?.takeIf { it.isOpenFor(clientId) } ?: createTransport(appContext, clientId).also {
                     webRtcClient?.close()
                     webRtcClient = it
                     val connected = it.connect()
@@ -294,14 +293,50 @@ class MeshModelViewModel : ViewModel() {
         val appContext = context.applicationContext
         viewModelScope.launch {
             try {
-                loadTask(task)
+                val clientId = currentClientId(fallbackClientId)
+                val refreshedTask = runCatching { OneImageApi.getImageTask(baseUrl, clientId, task.id) }
+                    .getOrNull()
+                    ?: task
+                val localTask = LocalTaskResultStore.overlayTask(refreshedTask)
+                loadTask(localTask)
+                if (localTask.status != "completed") {
+                    _uiState.value = _uiState.value.copy(
+                        phase = phaseForTask(localTask),
+                        statusMessage = localTask.statusDetails ?: localTask.status,
+                        error = when (localTask.status) {
+                            "failed" -> localTask.error ?: "Generation failed."
+                            "cancelled" -> "Task was cancelled."
+                            else -> "Task is not ready to restore."
+                        }
+                    )
+                    return@launch
+                }
+
+                if (localTask.results.isEmpty()) {
+                    _uiState.value = _uiState.value.copy(
+                        phase = MeshModelPhase.Completed,
+                        statusMessage = "Completed",
+                        error = "No result file is available to restore."
+                    )
+                    return@launch
+                }
+
+                val needsRestore = localTask.results.any { it.url.startsWith("webrtc://") }
+                if (!needsRestore) {
+                    _uiState.value = _uiState.value.copy(
+                        phase = MeshModelPhase.Completed,
+                        statusMessage = "Completed",
+                        error = null
+                    )
+                    return@launch
+                }
+
                 _uiState.value = _uiState.value.copy(
                     phase = MeshModelPhase.Restoring,
                     statusMessage = "Restoring result files...",
                     error = null
                 )
-                val clientId = currentClientId(fallbackClientId)
-                val transport = webRtcClient?.takeIf { it.isOpen() } ?: createTransport(appContext, clientId).also {
+                val transport = webRtcClient?.takeIf { it.isOpenFor(clientId) } ?: createTransport(appContext, clientId).also {
                     webRtcClient?.close()
                     webRtcClient = it
                     val connected = it.connect()
@@ -380,6 +415,18 @@ class MeshModelViewModel : ViewModel() {
                     statusMessage = if (current.phase == MeshModelPhase.Restoring) "Completed" else current.statusMessage,
                     error = null
                 )
+            },
+            onDisconnected = { message ->
+                val current = _uiState.value
+                if (current.phase == MeshModelPhase.Restoring) {
+                    _uiState.value = current.copy(
+                        phase = MeshModelPhase.Completed,
+                        statusMessage = "Restore interrupted",
+                        error = message
+                    )
+                } else {
+                    _uiState.value = current.copy(statusMessage = message)
+                }
             }
         )
 
@@ -452,7 +499,6 @@ class MeshModelViewModel : ViewModel() {
                     .mapNotNull(::taskFromDocument)
                     .filter { it.type == "image_to_3d_mesh" }
                 val activeTaskId = _uiState.value.currentTaskId
-                _uiState.value = _uiState.value.copy(history = tasks)
                 val active = tasks.firstOrNull { it.id == activeTaskId }
                     ?: tasks.firstOrNull { activeTaskId == null && it.status in setOf("pending", "processing", "initializing") }
                 if (active != null) applyTaskSnapshot(active)
@@ -571,7 +617,7 @@ class MeshModelViewModel : ViewModel() {
 
     private fun openResultStream(context: Context, url: String) = when {
         url.startsWith("file:") -> File(URI(url)).inputStream()
-        url.startsWith("content:") -> context.contentResolver.openInputStream(Uri.parse(url))
+        url.startsWith("content:") -> context.contentResolver.openInputStream(url.toUri())
             ?: error("Could not read result file.")
         url.startsWith("http://") || url.startsWith("https://") -> URL(url).openStream()
         else -> error("Unsupported result URL.")
@@ -587,6 +633,7 @@ class MeshModelViewModel : ViewModel() {
             "glb" -> "model/gltf-binary"
             "gltf" -> "model/gltf+json"
             "obj", "ply" -> "text/plain"
+            "spz", "ksplat", "splat" -> "application/octet-stream"
             else -> "application/octet-stream"
         }
     }

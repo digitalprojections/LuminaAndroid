@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.Timestamp
@@ -46,6 +47,7 @@ import kotlin.math.roundToInt
 private const val TASK_HISTORY_LIMIT = 250L
 private const val ENGINE_STATUS_STALE_MS = 90_000L
 private const val MAX_INPUT_IMAGE_LONG_EDGE = 1080f
+private const val VIDEO_FRAME_RATE = 25
 enum class VideoGenPhase {
     Idle,
     Preparing,
@@ -66,7 +68,6 @@ data class VideoGenUiState(
     val endTransferImageUri: Uri? = null,
     val endTransferFileInfo: OneImageFileInfo? = null,
     val duration: Int = 6,
-    val frameRate: Int = 25,
     val prompt: String = "",
     val isLightning: Boolean = true,
     val phase: VideoGenPhase = VideoGenPhase.Idle,
@@ -76,7 +77,6 @@ data class VideoGenUiState(
     val currentTaskId: String? = null,
     val currentTask: OneImageTask? = null,
     val results: List<OneImageTaskResult> = emptyList(),
-    val history: List<OneImageTask> = emptyList(),
     val profile: OneImageAccountProfile? = null,
     val pricing: WorkflowPricingConfig = WorkflowPricingConfig(),
     val engineReady: Boolean = false,
@@ -128,8 +128,7 @@ class VideoGenViewModel : ViewModel() {
             if (user == null) {
                 _uiState.value = _uiState.value.copy(
                     engineReady = false,
-                    queueStatus = null,
-                    history = emptyList()
+                    queueStatus = null
                 )
                 return@AuthStateListener
             }
@@ -296,7 +295,7 @@ class VideoGenViewModel : ViewModel() {
                     startFileInfo = startFileInfo,
                     endFileInfo = endFileInfo,
                     duration = initial.duration,
-                    frameRate = initial.frameRate
+                    frameRate = VIDEO_FRAME_RATE
                 )
 
                 _uiState.value = _uiState.value.copy(
@@ -372,7 +371,7 @@ class VideoGenViewModel : ViewModel() {
                     error = null
                 )
                 val clientId = currentClientId(fallbackClientId)
-                val transport = webRtcClient?.takeIf { it.isOpen() } ?: createTransport(appContext, clientId).also {
+                val transport = webRtcClient?.takeIf { it.isOpenFor(clientId) } ?: createTransport(appContext, clientId).also {
                     webRtcClient?.close()
                     webRtcClient = it
                     val connected = it.connect()
@@ -451,6 +450,18 @@ class VideoGenViewModel : ViewModel() {
                     statusMessage = if (current.phase == VideoGenPhase.Restoring) "Completed" else current.statusMessage,
                     error = null
                 )
+            },
+            onDisconnected = { message ->
+                val current = _uiState.value
+                if (current.phase == VideoGenPhase.Restoring) {
+                    _uiState.value = current.copy(
+                        phase = VideoGenPhase.Completed,
+                        statusMessage = "Restore interrupted",
+                        error = message
+                    )
+                } else {
+                    _uiState.value = current.copy(statusMessage = message)
+                }
             }
         )
 
@@ -524,7 +535,6 @@ class VideoGenViewModel : ViewModel() {
                     .mapNotNull(::taskFromDocument)
                     .filter { it.type == "video" }
                 val activeTaskId = _uiState.value.currentTaskId
-                _uiState.value = _uiState.value.copy(history = tasks)
                 val active = tasks.firstOrNull { it.id == activeTaskId }
                     ?: tasks.firstOrNull { activeTaskId == null && it.status in setOf("pending", "processing", "initializing") }
                 if (active != null) applyTaskSnapshot(active)
@@ -640,7 +650,7 @@ class VideoGenViewModel : ViewModel() {
 
     private fun openResultStream(context: Context, url: String) = when {
         url.startsWith("file:") -> File(URI(url)).inputStream()
-        url.startsWith("content:") -> context.contentResolver.openInputStream(Uri.parse(url))
+        url.startsWith("content:") -> context.contentResolver.openInputStream(url.toUri())
             ?: error("Could not read result file.")
         url.startsWith("http://") || url.startsWith("https://") -> URL(url).openStream()
         else -> error("Unsupported result URL.")

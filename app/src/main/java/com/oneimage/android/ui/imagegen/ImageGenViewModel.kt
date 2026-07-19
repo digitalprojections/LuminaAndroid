@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.Timestamp
@@ -71,7 +72,6 @@ data class ImageGenUiState(
     val currentTaskId: String? = null,
     val currentTask: OneImageTask? = null,
     val results: List<OneImageTaskResult> = emptyList(),
-    val history: List<OneImageTask> = emptyList(),
     val profile: OneImageAccountProfile? = null,
     val pricing: WorkflowPricingConfig = WorkflowPricingConfig(),
     val engineReady: Boolean = false,
@@ -123,8 +123,7 @@ class ImageGenViewModel : ViewModel() {
             if (user == null) {
                 _uiState.value = _uiState.value.copy(
                     engineReady = false,
-                    queueStatus = null,
-                    history = emptyList()
+                    queueStatus = null
                 )
                 return@AuthStateListener
             }
@@ -326,7 +325,7 @@ class ImageGenViewModel : ViewModel() {
                     error = null
                 )
                 val clientId = currentClientId(fallbackClientId)
-                val transport = webRtcClient?.takeIf { it.isOpen() } ?: createTransport(appContext, clientId).also {
+                val transport = webRtcClient?.takeIf { it.isOpenFor(clientId) } ?: createTransport(appContext, clientId).also {
                     webRtcClient?.close()
                     webRtcClient = it
                     val connected = it.connect()
@@ -405,6 +404,18 @@ class ImageGenViewModel : ViewModel() {
                     statusMessage = if (current.phase == ImageGenPhase.Restoring) "Completed" else current.statusMessage,
                     error = null
                 )
+            },
+            onDisconnected = { message ->
+                val current = _uiState.value
+                if (current.phase == ImageGenPhase.Restoring) {
+                    _uiState.value = current.copy(
+                        phase = ImageGenPhase.Completed,
+                        statusMessage = "Restore interrupted",
+                        error = message
+                    )
+                } else {
+                    _uiState.value = current.copy(statusMessage = message)
+                }
             }
         )
 
@@ -478,7 +489,6 @@ class ImageGenViewModel : ViewModel() {
                     .mapNotNull(::taskFromDocument)
                     .filter { it.type == "image" }
                 val activeTaskId = _uiState.value.currentTaskId
-                _uiState.value = _uiState.value.copy(history = tasks)
                 val active = tasks.firstOrNull { it.id == activeTaskId }
                     ?: tasks.firstOrNull { activeTaskId == null && it.status in setOf("pending", "processing", "initializing") }
                 if (active != null) applyTaskSnapshot(active)
@@ -594,7 +604,7 @@ class ImageGenViewModel : ViewModel() {
 
     private fun openResultStream(context: Context, url: String) = when {
         url.startsWith("file:") -> File(URI(url)).inputStream()
-        url.startsWith("content:") -> context.contentResolver.openInputStream(Uri.parse(url))
+        url.startsWith("content:") -> context.contentResolver.openInputStream(url.toUri())
             ?: error("Could not read result file.")
         url.startsWith("http://") || url.startsWith("https://") -> URL(url).openStream()
         else -> error("Unsupported result URL.")

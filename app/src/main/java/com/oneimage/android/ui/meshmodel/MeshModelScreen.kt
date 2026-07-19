@@ -1,6 +1,8 @@
 package com.oneimage.android.ui.meshmodel
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.provider.Settings
 import android.util.Log
@@ -14,6 +16,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.net.toUri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,16 +28,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
@@ -55,7 +57,6 @@ import coil.compose.AsyncImage
 import com.oneimage.android.api.OneImageTask
 import com.oneimage.android.api.OneImageTaskResult
 import com.oneimage.android.ui.shared.CancelTaskConfirmationDialog
-import com.oneimage.android.ui.shared.WorkflowHistoryList
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -64,6 +65,13 @@ import org.json.JSONObject
 private val MESH_VIEWER_BACKGROUND_PRESETS = listOf(
     "#050507", "#111827", "#f8fafc", "#e5e7eb", "#0f766e", "#7c2d12"
 )
+private const val MAX_ANDROID_GLB_PREVIEW_BYTES = 96L * 1024L * 1024L
+
+private enum class MeshNetworkKind {
+    Cellular,
+    WifiOrEthernet,
+    Unknown
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -79,6 +87,7 @@ fun MeshModelScreen(
             ?: "device"
         "android-$androidId"
     }
+    val networkKind = remember { currentMeshNetworkKind(context) }
 
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) viewModel.selectImage(context, uri)
@@ -95,6 +104,7 @@ fun MeshModelScreen(
     var viewerSource by remember(modelUrl) { mutableStateOf<MeshViewerSource?>(null) }
     var isPreparingViewer by remember(modelUrl) { mutableStateOf(false) }
     var cancelAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var showMobileDataConfirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(modelUrl, canPreviewResult) {
         val url = modelUrl
@@ -107,7 +117,7 @@ fun MeshModelScreen(
         } else if (url.startsWith("file:") || url.startsWith("content:")) {
             isPreparingViewer = true
             viewerSource = withContext(Dispatchers.IO) {
-                runCatching { cacheMeshViewerFile(context, Uri.parse(url)) }.getOrNull()
+                runCatching { cacheMeshViewerFile(context, url.toUri()) }.getOrNull()
             }
             isPreparingViewer = false
         } else {
@@ -124,6 +134,28 @@ fun MeshModelScreen(
             action?.invoke()
         }
     )
+
+    if (showMobileDataConfirm) {
+        AlertDialog(
+            onDismissRequest = { showMobileDataConfirm = false },
+            icon = { Icon(Icons.Default.Warning, contentDescription = null) },
+            title = { Text("Use Mobile Data?") },
+            text = { Text("Game Mesh GLB results can be large. Wi-Fi is recommended before creating or restoring mesh files.") },
+            confirmButton = {
+                Button(onClick = {
+                    showMobileDataConfirm = false
+                    viewModel.generateMesh(context, clientId)
+                }) {
+                    Text("Continue")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showMobileDataConfirm = false }) {
+                    Text("Wait")
+                }
+            }
+        )
+    }
 
     val canGenerate = state.sourceImageUri != null &&
             state.transferImageUri != null &&
@@ -176,7 +208,14 @@ fun MeshModelScreen(
             BuildPanel(
                 state = state,
                 canGenerate = canGenerate,
-                onGenerate = { viewModel.generateMesh(context, clientId) },
+                networkKind = networkKind,
+                onGenerate = {
+                    if (networkKind == MeshNetworkKind.Cellular) {
+                        showMobileDataConfirm = true
+                    } else {
+                        viewModel.generateMesh(context, clientId)
+                    }
+                },
                 onCancel = { cancelAction = { viewModel.cancelCurrentTask(clientId) } }
             )
 
@@ -311,6 +350,7 @@ private fun SourcePanel(
 private fun BuildPanel(
     state: MeshModelUiState,
     canGenerate: Boolean,
+    networkKind: MeshNetworkKind,
     onGenerate: () -> Unit,
     onCancel: () -> Unit
 ) {
@@ -321,6 +361,8 @@ private fun BuildPanel(
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("02 / BUILD", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("Textured Mesh", fontWeight = FontWeight.Bold)
+
+            MeshDataWarning(networkKind = networkKind)
 
             Button(
                 onClick = onGenerate,
@@ -341,7 +383,7 @@ private fun BuildPanel(
                 } else {
                     Text("Create Model · ${state.estimatedCredits} credits", fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(18.dp))
                 }
             }
 
@@ -373,6 +415,42 @@ private fun BuildPanel(
                     Text("This account does not have enough credits.", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun MeshDataWarning(networkKind: MeshNetworkKind) {
+    val isCellular = networkKind == MeshNetworkKind.Cellular
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = if (isCellular) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(
+            1.dp,
+            if (isCellular) MaterialTheme.colorScheme.error.copy(alpha = 0.28f) else MaterialTheme.colorScheme.outlineVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.Warning,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = if (isCellular) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = if (isCellular) {
+                    "Mobile data detected. Game Mesh GLB files can be large; Wi-Fi is recommended."
+                } else {
+                    "Game Mesh GLB files can be large. Wi-Fi is recommended for creating and restoring results."
+                },
+                fontSize = 12.sp,
+                color = if (isCellular) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -422,6 +500,9 @@ private fun OutputPanel(
     onRestore: (OneImageTask?) -> Unit,
     onReset: () -> Unit
 ) {
+    val resultNeedsRestore = result?.url?.startsWith("webrtc://") == true
+    val resultTooLargeToPreview = result?.let(::isOversizedMeshPreviewResult) == true
+
     Card(
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -463,8 +544,6 @@ private fun OutputPanel(
                                     settings.domStorageEnabled = true
                                     settings.allowFileAccess = true
                                     settings.allowContentAccess = true
-                                    settings.allowFileAccessFromFileURLs = true
-                                    settings.allowUniversalAccessFromFileURLs = true
                                     webViewClient = object : WebViewClient() {
                                         override fun shouldInterceptRequest(
                                             view: WebView?,
@@ -501,6 +580,18 @@ private fun OutputPanel(
                                                 "Load error ${error?.errorCode}: ${error?.description} for ${request?.url}"
                                             )
                                         }
+
+                                        override fun onPageFinished(view: WebView?, url: String?) {
+                                            val webView = view as? MeshViewerWebView ?: return
+                                            webView.shellReady = true
+                                            webView.viewerSource?.let { source ->
+                                                applyMeshViewerSource(webView, source.renderUrl)
+                                                webView.loadedRenderUrl = source.renderUrl
+                                            }
+                                            webView.loadedBackground?.let { background ->
+                                                applyMeshViewerBackground(webView, background)
+                                            }
+                                        }
                                     }
                                     webChromeClient = object : WebChromeClient() {
                                         override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
@@ -520,14 +611,15 @@ private fun OutputPanel(
                                 webView.viewerSource = viewerSource
                                 if (!webView.loadedShell) {
                                     webView.loadedShell = true
+                                    webView.shellReady = false
                                     val baseUrl = "https://$MESH_VIEWER_HOST/"
                                     webView.loadDataWithBaseURL(baseUrl, MESH_VIEWER_HTML, "text/html", "UTF-8", null)
                                 }
-                                if (webView.loadedRenderUrl != viewerSource.renderUrl) {
+                                if (webView.shellReady && webView.loadedRenderUrl != viewerSource.renderUrl) {
                                     webView.loadedRenderUrl = viewerSource.renderUrl
                                     applyMeshViewerSource(webView, viewerSource.renderUrl)
                                 }
-                                if (webView.loadedBackground != viewerBackground) {
+                                if (webView.shellReady && webView.loadedBackground != viewerBackground) {
                                     applyMeshViewerBackground(webView, viewerBackground)
                                 }
                                 webView.loadedBackground = viewerBackground
@@ -535,24 +627,41 @@ private fun OutputPanel(
                             modifier = Modifier.fillMaxSize()
                         )
                     }
-                    result != null && !canPreviewResult -> {
+                    resultNeedsRestore -> {
                         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Icon(Icons.Default.ViewInAr, contentDescription = null, size = 44.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("Model file ready", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text(result.filename.ifBlank { "Download result" }, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(result?.filename?.ifBlank { "Restore result" } ?: "Restore result", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            TextButton(onClick = { onRestore(state.currentTask) }) {
+                                Icon(Icons.Default.Refresh, contentDescription = null)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Restore")
+                            }
+                        }
+                    }
+                    result != null && !canPreviewResult -> {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Default.ViewInAr, contentDescription = null, size = 44.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                if (resultTooLargeToPreview) "Large model file ready" else "Model file ready",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                            Text(
+                                if (resultTooLargeToPreview) {
+                                    "${formatBytes(result.size)} GLB. Save and open in a desktop 3D tool."
+                                } else {
+                                    result.filename.ifBlank { "Download result" }
+                                },
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                     state.phase == MeshModelPhase.Running || state.phase == MeshModelPhase.Restoring -> {
                         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             CircularProgressIndicator()
                             Text("Building 3D Mesh...", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                    result?.url?.startsWith("webrtc://") == true -> {
-                        TextButton(onClick = { onRestore(state.currentTask) }) {
-                            Icon(Icons.Default.Refresh, contentDescription = null)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Restore")
                         }
                     }
                     else -> {
@@ -565,7 +674,7 @@ private fun OutputPanel(
                 }
             }
 
-            if (result != null && (viewerSource != null || !canPreviewResult)) {
+            if (result != null && !resultNeedsRestore && (viewerSource != null || !canPreviewResult)) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (viewerSource != null) {
                         Row(
@@ -633,14 +742,16 @@ private fun cacheMeshViewerFile(context: Context, uri: Uri): MeshViewerSource? {
         ?.takeIf { it.isNotBlank() }
         ?.let { ".$it" }
         ?: ".glb"
-    val file = File(directory, "viewer-${System.currentTimeMillis()}$extension")
-    val inputStream = when (uri.scheme?.lowercase()) {
-        "content" -> context.contentResolver.openInputStream(uri)
-        "file" -> uri.path?.let { File(it).inputStream() }
+    val file = when (uri.scheme?.lowercase()) {
+        "file" -> uri.path?.let { File(it).takeIf(File::isFile) }
+        "content" -> {
+            val cachedFile = File(directory, "viewer-${System.currentTimeMillis()}$extension")
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                cachedFile.outputStream().use { output -> input.copyTo(output) }
+            } ?: return null
+            cachedFile
+        }
         else -> null
-    }
-    inputStream?.use { input ->
-        file.outputStream().use { output -> input.copyTo(output) }
     } ?: return null
     val mimeType = when (extension.lowercase()) {
         ".glb" -> "model/gltf-binary"
@@ -659,6 +770,7 @@ private fun cacheMeshViewerFile(context: Context, uri: Uri): MeshViewerSource? {
 }
 
 private fun canPreviewMeshResult(result: OneImageTaskResult): Boolean {
+    if (isOversizedMeshPreviewResult(result)) return false
     val extension = listOf(result.filename, result.url)
         .asSequence()
         .map { value ->
@@ -675,6 +787,46 @@ private fun canPreviewMeshResult(result: OneImageTaskResult): Boolean {
     return extension == "glb" || extension == "gltf"
 }
 
+private fun isOversizedMeshPreviewResult(result: OneImageTaskResult): Boolean {
+    val extension = meshResultExtension(result)
+    return extension == "glb" && result.size > MAX_ANDROID_GLB_PREVIEW_BYTES
+}
+
+private fun meshResultExtension(result: OneImageTaskResult): String =
+    listOf(result.filename, result.url)
+        .asSequence()
+        .map { value ->
+            value
+                .substringBefore('?')
+                .substringBefore('#')
+                .substringAfterLast('/')
+                .substringAfterLast('\\')
+                .substringAfterLast('.', "")
+                .lowercase()
+        }
+        .firstOrNull { it.isNotBlank() }
+        .orEmpty()
+
+private fun formatBytes(size: Long): String {
+    if (size <= 0L) return "Large"
+    val mib = size.toDouble() / (1024.0 * 1024.0)
+    return "${String.format(java.util.Locale.US, "%.1f", mib)} MB"
+}
+
+private fun currentMeshNetworkKind(context: Context): MeshNetworkKind {
+    val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        ?: return MeshNetworkKind.Unknown
+    val network = connectivity.activeNetwork ?: return MeshNetworkKind.Unknown
+    val capabilities = connectivity.getNetworkCapabilities(network) ?: return MeshNetworkKind.Unknown
+
+    return when {
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> MeshNetworkKind.Cellular
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> MeshNetworkKind.WifiOrEthernet
+        else -> MeshNetworkKind.Unknown
+    }
+}
+
 private data class MeshViewerSource(
     val renderUrl: String,
     val localFile: File? = null,
@@ -685,6 +837,7 @@ private data class MeshViewerSource(
 private class MeshViewerWebView(context: Context) : WebView(context) {
     var viewerSource: MeshViewerSource? = null
     var loadedShell: Boolean = false
+    var shellReady: Boolean = false
     var loadedRenderUrl: String? = null
     var loadedBackground: String? = null
 }

@@ -22,6 +22,7 @@ import com.oneimage.android.ui.account.AccountViewModel
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onLegalClick: () -> Unit,
     darkModeEnabled: Boolean,
     onDarkModeChanged: (Boolean) -> Unit,
     onLogout: () -> Unit,
@@ -30,6 +31,7 @@ fun SettingsScreen(
     val accountState by accountViewModel.uiState.collectAsState()
     val user = FirebaseAuth.getInstance().currentUser
     val profile = accountState.profile
+    val legalAcceptanceRequired = profile != null && !profile.hasAcceptedCurrentLegal
 
     LaunchedEffect(Unit) {
         accountViewModel.loadProfile()
@@ -90,6 +92,45 @@ fun SettingsScreen(
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 8.dp)
                     )
+                }
+            }
+
+            if (legalAcceptanceRequired) {
+                item {
+                    HorizontalDivider()
+                }
+
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            "Privacy & Terms",
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            "Please accept the current Privacy Policy and Terms of Use before starting generation tasks.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = onLegalClick,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Review")
+                            }
+                            Button(
+                                onClick = { accountViewModel.acceptLegalAgreements() },
+                                enabled = !accountState.isAcceptingLegal,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(if (accountState.isAcceptingLegal) "Saving..." else "Accept")
+                            }
+                        }
+                    }
                 }
             }
 

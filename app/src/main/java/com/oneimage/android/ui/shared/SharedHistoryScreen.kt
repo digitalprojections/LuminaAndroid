@@ -7,6 +7,7 @@ import android.provider.DocumentsContract
 import android.webkit.MimeTypeMap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.net.toUri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -59,6 +60,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -163,7 +165,7 @@ fun SharedHistoryScreen(
 
     var history by remember(spec.workflowKey) { mutableStateOf<List<OneImageTask>>(emptyList()) }
     var selectedTaskId by rememberSaveable(spec.workflowKey) { mutableStateOf<String?>(null) }
-    var selectedResultIndex by rememberSaveable(spec.workflowKey) { mutableStateOf(0) }
+    var selectedResultIndex by rememberSaveable(spec.workflowKey) { mutableIntStateOf(0) }
     var previewSizeKey by rememberSaveable(spec.workflowKey) { mutableStateOf(PREVIEW_SIZE_OPTIONS.first().key) }
     var previewFrameKey by rememberSaveable(spec.workflowKey) { mutableStateOf(PREVIEW_FRAME_OPTIONS.first().key) }
     var previewFitKey by rememberSaveable(spec.workflowKey) { mutableStateOf(PREVIEW_FIT_OPTIONS.first().key) }
@@ -207,15 +209,57 @@ fun SharedHistoryScreen(
         }
     }
 
+    fun replaceHistoryTask(task: OneImageTask) {
+        val localTask = LocalTaskResultStore.overlayTask(task)
+        history = history.map { existing ->
+            if (existing.id == localTask.id) localTask else existing
+        }
+    }
+
+    fun openTaskAction(task: OneImageTask) {
+        applySelection(task.id)
+        if (clientId.isBlank()) {
+            message = "Please sign in again."
+            return
+        }
+
+        scope.launch {
+            runCatching { OneImageApi.getImageTask(baseUrl, clientId, task.id) }
+                .onSuccess { latestTask ->
+                    if (latestTask != null) {
+                        replaceHistoryTask(latestTask)
+                        message = if (latestTask.status in SHARED_HISTORY_ACTIVE_STATES && latestTask.results.isEmpty()) {
+                            "Task is ${latestTask.status}. You can refresh or cancel it."
+                        } else {
+                            "Task state refreshed."
+                        }
+                    } else {
+                        message = "Task is no longer available."
+                    }
+                }
+                .onFailure { message = it.message ?: "Could not refresh task state." }
+        }
+    }
+
+    val refreshTaskAction: (OneImageTask) -> Unit = { task ->
+        openTaskAction(task)
+    }
+
     val deleteTaskAction: (OneImageTask) -> Unit = { task ->
         scope.launch {
+            if (task.status in SHARED_HISTORY_ACTIVE_STATES) {
+                message = "Cancel the active task before deleting it."
+                return@launch
+            }
             runCatching { OneImageApi.deleteTask(baseUrl, clientId, task.id) }
+                .onSuccess {
+                    LocalTaskResultStore.clearTask(task.id)
+                    val filtered = history.filterNot { it.id == task.id }
+                    history = filtered
+                    if (selectedTaskId == task.id) applySelection(filtered.firstOrNull()?.id)
+                    message = "Task deleted."
+                }
                 .onFailure { message = it.message ?: "Could not delete task." }
-            LocalTaskResultStore.clearTask(task.id)
-            val filtered = history.filterNot { it.id == task.id }
-            history = filtered
-            if (selectedTaskId == task.id) applySelection(filtered.firstOrNull()?.id)
-            message = "Task deleted."
         }
     }
 
@@ -225,6 +269,20 @@ fun SharedHistoryScreen(
             message = "Please sign in again."
         } else {
             scope.launch {
+                val latestTask = runCatching { OneImageApi.getImageTask(baseUrl, clientId, task.id) }
+                    .onFailure { message = it.message ?: "Could not refresh task state." }
+                    .getOrNull()
+                val restorableTask = latestTask ?: task
+                if (latestTask != null) replaceHistoryTask(latestTask)
+                if (restorableTask.status != "completed") {
+                    message = when (restorableTask.status) {
+                        "failed" -> restorableTask.error ?: "Task failed."
+                        "cancelled" -> "Task was cancelled."
+                        else -> "Task is ${restorableTask.status}. Cancel it if you want to stop it."
+                    }
+                    return@launch
+                }
+
                 val openTransport = transport?.takeIf { it.isOpen() } ?: run {
                     val newTransport = OneImageWebRtcClient(
                         context = context,
@@ -235,6 +293,9 @@ fun SharedHistoryScreen(
                             val restoredTaskId = file.taskId?.trim().orEmpty()
                             if (restoredTaskId.isNotBlank()) updateLocalTask(restoredTaskId)
                             message = "Local copy restored."
+                        },
+                        onDisconnected = {
+                            message = it
                         }
                     )
                     transport?.close()
@@ -246,7 +307,7 @@ fun SharedHistoryScreen(
                     newTransport
                 }
 
-                val sent = openTransport.requestTaskResults(task.id, task.type.ifBlank { spec.taskType })
+                val sent = openTransport.requestTaskResults(restorableTask.id, restorableTask.type.ifBlank { spec.taskType })
                 message = if (sent) "Restoring results..." else "Restore request could not be sent."
             }
         }
@@ -376,6 +437,7 @@ fun SharedHistoryScreen(
             SharedHistoryControlRow(
                 task = selectedTask,
                 availability = selectedAvailability,
+                onRefresh = refreshTaskAction,
                 onRestore = restoreTaskAction,
                 onDelete = deleteTaskAction,
                 onExport = { task ->
@@ -425,7 +487,8 @@ fun SharedHistoryScreen(
                             task = task,
                             title = sharedHistoryTaskTitle(spec, task),
                             isSelected = task.id == selectedTaskId,
-                            onView = { applySelection(task.id) },
+                            onView = { openTaskAction(task) },
+                            onRefresh = { refreshTaskAction(task) },
                             onDelete = { deleteTaskAction(task) },
                             onRestore = { restoreTaskAction(task) },
                             onCancel = { cancelTask = task }
@@ -745,6 +808,7 @@ private fun PreviewControlChip(
 private fun SharedHistoryControlRow(
     task: OneImageTask?,
     availability: LocalTaskResultAvailability?,
+    onRefresh: (OneImageTask) -> Unit,
     onRestore: (OneImageTask) -> Unit,
     onDelete: (OneImageTask) -> Unit,
     onExport: (OneImageTask) -> Unit,
@@ -761,6 +825,16 @@ private fun SharedHistoryControlRow(
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         when {
             isActive -> {
+                OutlinedButton(
+                    onClick = { onRefresh(task) },
+                    modifier = Modifier.weight(1f).height(36.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Refresh", fontSize = 12.sp)
+                }
                 Button(
                     onClick = { onCancel(task) },
                     modifier = Modifier.weight(1f).height(36.dp),
@@ -787,7 +861,7 @@ private fun SharedHistoryControlRow(
             }
         }
 
-        if (canExport) {
+        if (!isActive && canExport) {
             Button(
                 onClick = { onExport(task) },
                 modifier = Modifier.weight(1f).height(36.dp),
@@ -800,15 +874,17 @@ private fun SharedHistoryControlRow(
             }
         }
 
-        OutlinedButton(
-            onClick = { onDelete(task) },
-            modifier = Modifier.weight(1f).height(36.dp),
-            shape = RoundedCornerShape(10.dp),
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
-        ) {
-            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
-            Spacer(modifier = Modifier.width(6.dp))
-            Text("Delete", fontSize = 12.sp)
+        if (!isActive) {
+            OutlinedButton(
+                onClick = { onDelete(task) },
+                modifier = Modifier.weight(1f).height(36.dp),
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+            ) {
+                Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Delete", fontSize = 12.sp)
+            }
         }
     }
 }
@@ -819,6 +895,7 @@ private fun CompactHistoryItem(
     title: String,
     isSelected: Boolean,
     onView: () -> Unit,
+    onRefresh: () -> Unit,
     onDelete: () -> Unit,
     onRestore: () -> Unit,
     onCancel: () -> Unit
@@ -830,17 +907,18 @@ private fun CompactHistoryItem(
     val canRestore = !availability.hasAllLocal &&
         (task.results.any { it.url.startsWith("webrtc://") } || task.useWebRTC)
     val secondaryIcon = when {
-        isActive -> Icons.Default.Cancel
+        isActive -> Icons.Default.Refresh
         canRestore -> Icons.Default.Refresh
         else -> Icons.Default.Delete
     }
     val secondaryAction = when {
-        isActive -> onCancel
+        isActive -> onRefresh
         canRestore -> onRestore
         else -> onDelete
     }
     val detailText = when {
         isFailed -> task.error ?: "Task failed."
+        isActive && task.results.isEmpty() -> "No outputs yet. Refresh or cancel."
         !task.statusDetails.isNullOrBlank() -> task.statusDetails
         availability.hasAnyLocal && availability.totalCount > 0 -> "${availability.localCount}/${availability.totalCount} local"
         else -> null
@@ -1115,11 +1193,11 @@ private suspend fun exportTaskResultsToFolder(
 
 private fun openResultInputStream(context: Context, url: String) = when {
     url.startsWith("file:") -> {
-        val path = Uri.parse(url).path ?: error("Could not read file result.")
+        val path = url.toUri().path ?: error("Could not read file result.")
         File(path).inputStream()
     }
     url.startsWith("content:") -> {
-        context.contentResolver.openInputStream(Uri.parse(url)) ?: error("Could not read content result.")
+        context.contentResolver.openInputStream(url.toUri()) ?: error("Could not read content result.")
     }
     url.startsWith("http://") || url.startsWith("https://") -> URL(url).openStream()
     else -> error("This result must be restored before saving.")

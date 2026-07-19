@@ -22,8 +22,9 @@ import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
-import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.OutputStream
+import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.MessageDigest
@@ -45,7 +46,8 @@ class OneImageWebRtcClient(
     private val context: Context,
     private val clientId: String,
     private val onStatus: (String) -> Unit,
-    private val onFileReceived: (WebRtcReceivedFile) -> Unit
+    private val onFileReceived: (WebRtcReceivedFile) -> Unit,
+    private val onDisconnected: (String) -> Unit = {}
 ) {
     private val transferOwnerId = UUID.randomUUID().toString()
     private val firestore = FirebaseFirestore.getInstance()
@@ -60,6 +62,8 @@ class OneImageWebRtcClient(
     private val sendScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val sendMutex = Mutex()
     private var isOfferWritten = false
+    private var isClosing = false
+    private var disconnectReported = false
     init {
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(context.applicationContext)
@@ -78,6 +82,8 @@ class OneImageWebRtcClient(
 
     fun isOpen(): Boolean = dataChannel?.state() == DataChannel.State.OPEN
 
+    fun isOpenFor(clientId: String): Boolean = this.clientId == clientId && isOpen()
+
     fun requestTaskResults(taskId: String, taskType: String = "image"): Boolean {
         val channel = dataChannel ?: return false
         if (channel.state() != DataChannel.State.OPEN) return false
@@ -94,6 +100,8 @@ class OneImageWebRtcClient(
     suspend fun connect(timeoutMs: Long = 15_000): Boolean = withContext(Dispatchers.Main) {
         if (dataChannel?.state() == DataChannel.State.OPEN) return@withContext true
         close()
+        isClosing = false
+        disconnectReported = false
 
         onStatus("Opening direct transfer...")
         val factory = PeerConnectionFactory.builder().createPeerConnectionFactory()
@@ -106,7 +114,15 @@ class OneImageWebRtcClient(
             object : PeerConnection.Observer {
                 override fun onSignalingChange(state: PeerConnection.SignalingState?) = Unit
                 override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
-                    onStatus("Direct transfer: ${state?.name?.lowercase() ?: "checking"}")
+                    val stateName = state?.name?.lowercase() ?: "checking"
+                    onStatus("Direct transfer: $stateName")
+                    if (
+                        state == PeerConnection.IceConnectionState.FAILED ||
+                        state == PeerConnection.IceConnectionState.DISCONNECTED ||
+                        state == PeerConnection.IceConnectionState.CLOSED
+                    ) {
+                        handleTransferDisconnected("Direct transfer disconnected. Tap Restore to reconnect.")
+                    }
                 }
                 override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
                 override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) = Unit
@@ -134,7 +150,12 @@ class OneImageWebRtcClient(
             channel.registerObserver(object : DataChannel.Observer {
                 override fun onBufferedAmountChange(previousAmount: Long) = Unit
                 override fun onStateChange() {
-                    if (channel.state() == DataChannel.State.OPEN) onStatus("Direct transfer connected")
+                    when (channel.state()) {
+                        DataChannel.State.OPEN -> onStatus("Direct transfer connected")
+                        DataChannel.State.CLOSING,
+                        DataChannel.State.CLOSED -> handleTransferDisconnected("Direct transfer disconnected. Tap Restore to reconnect.")
+                        else -> Unit
+                    }
                 }
                 override fun onMessage(buffer: DataChannel.Buffer?) {
                     if (buffer == null) return
@@ -193,6 +214,7 @@ class OneImageWebRtcClient(
     }
 
     fun close() {
+        isClosing = true
         answerListener?.remove()
         candidateListener?.remove()
         answerListener = null
@@ -202,12 +224,49 @@ class OneImageWebRtcClient(
         dataChannel = null
         peerConnection = null
         sessionId = null
+        incomingFiles.values.forEach(::cleanupIncomingFile)
         incomingFiles.clear()
         WebRtcTransferProgressStore.clearOwner(transferOwnerId)
         synchronized(this) {
             pendingCandidates.clear()
             isOfferWritten = false
         }
+    }
+
+    private fun handleTransferDisconnected(message: String) {
+        if (isClosing || disconnectReported) return
+        disconnectReported = true
+        onStatus(message)
+        failIncomingTransfers(message)
+        onDisconnected(message)
+        releaseConnectionAfterDisconnect()
+    }
+
+    private fun failIncomingTransfers(message: String) {
+        val nowMs = SystemClock.elapsedRealtime()
+        incomingFiles.values.forEach { incoming ->
+            WebRtcTransferProgressStore.fail(transferOwnerId, incoming.fileId, message, nowMs)
+            cleanupIncomingFile(incoming)
+        }
+        incomingFiles.clear()
+    }
+
+    private fun releaseConnectionAfterDisconnect() {
+        isClosing = true
+        answerListener?.remove()
+        candidateListener?.remove()
+        answerListener = null
+        candidateListener = null
+        runCatching { dataChannel?.close() }
+        runCatching { peerConnection?.close() }
+        dataChannel = null
+        peerConnection = null
+        sessionId = null
+        synchronized(this) {
+            pendingCandidates.clear()
+            isOfferWritten = false
+        }
+        isClosing = false
     }
 
     private fun sendCandidate(id: String, candidate: IceCandidate) {
@@ -251,6 +310,10 @@ class OneImageWebRtcClient(
                 val filename = json.optString("filename", "result")
                 val taskId = json.optString("taskId").ifBlank { null }
                 val nowMs = SystemClock.elapsedRealtime()
+                incomingFiles.remove(fileId)?.let(::cleanupIncomingFile)
+                val safeName = filename.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "result" }
+                val directory = File(context.cacheDir, "oneimage-results").apply { mkdirs() }
+                val tempFile = File(directory, "$fileId-$safeName.part").apply { delete() }
                 incomingFiles[fileId] = IncomingFile(
                     fileId = fileId,
                     filename = filename,
@@ -260,7 +323,10 @@ class OneImageWebRtcClient(
                     taskId = taskId,
                     label = json.optString("label").ifBlank { null },
                     checksum = json.optString("checksum").ifBlank { null },
-                    lastProgressAtMs = nowMs
+                    lastProgressAtMs = nowMs,
+                    tempFile = tempFile,
+                    output = tempFile.outputStream().buffered(),
+                    digest = json.optString("checksum").ifBlank { null }?.let { MessageDigest.getInstance("SHA-256") }
                 )
                 WebRtcTransferProgressStore.start(transferOwnerId, fileId, filename, wireSize, taskId, nowMs)
             }
@@ -329,48 +395,49 @@ class OneImageWebRtcClient(
                 framed.error,
                 SystemClock.elapsedRealtime()
             )
-            incomingFiles.remove(framed.fileId)
+            incomingFiles.remove(framed.fileId)?.let(::cleanupIncomingFile)
             return
         }
         val fileId = framed?.fileId ?: incomingFiles.keys.lastOrNull() ?: return
         val file = incomingFiles[fileId] ?: return
 
         val chunk = framed?.chunk ?: bytes
-        val offset = framed?.offset
-        val received = file.bytes.size()
+        val offset = framed?.offset?.toLong()
+        val received = file.bytesReceived
 
         if (offset != null) {
             if (offset < received && offset + chunk.size <= received) return
             if (offset != received) {
                 val message = "Restore failed for ${file.filename}: chunk order was invalid"
                 onStatus(message)
-                incomingFiles.remove(fileId)
+                incomingFiles.remove(fileId)?.let(::cleanupIncomingFile)
                 WebRtcTransferProgressStore.fail(transferOwnerId, fileId, message, SystemClock.elapsedRealtime())
                 return
             }
         }
 
-        val remaining = (file.size - received).coerceAtLeast(0L).toInt()
+        val remaining = (file.size - received).coerceAtLeast(0L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         if (remaining <= 0) {
             if (file.endReceived) finalizeIncomingFile(fileId)
             return
         }
 
-        val acceptedChunk = if (chunk.size > remaining) chunk.copyOf(remaining) else chunk
-        file.bytes.write(acceptedChunk)
+        val acceptedLength = minOf(chunk.size, remaining)
+        file.output.write(chunk, 0, acceptedLength)
+        file.digest?.update(chunk, 0, acceptedLength)
+        file.bytesReceived += acceptedLength
         reportIncomingProgress(file)
-        if (file.endReceived || file.bytes.size().toLong() >= file.size) {
+        if (file.endReceived || file.bytesReceived >= file.size) {
             finalizeIncomingFile(fileId)
         }
     }
 
     private fun finalizeIncomingFile(fileId: String) {
-        val incoming = incomingFiles.remove(fileId) ?: return
-        val wireBytes = incoming.bytes.toByteArray()
-        if (wireBytes.size.toLong() < incoming.size) {
-            incomingFiles[fileId] = incoming
+        val incoming = incomingFiles[fileId] ?: return
+        if (incoming.bytesReceived < incoming.size) {
             return
         }
+        incomingFiles.remove(fileId)
 
         WebRtcTransferProgressStore.verifying(
             transferOwnerId,
@@ -379,25 +446,19 @@ class OneImageWebRtcClient(
             SystemClock.elapsedRealtime()
         )
 
-        val expectedWireSize = incoming.size.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-        val trimmedWireBytes = if (wireBytes.size > expectedWireSize) {
-            wireBytes.copyOf(expectedWireSize)
-        } else {
-            wireBytes
+        runCatching { incoming.output.flush() }
+        runCatching { incoming.output.close() }
+        if (incoming.originalSize in 1 until incoming.tempFile.length()) {
+            runCatching {
+                RandomAccessFile(incoming.tempFile, "rw").use { it.setLength(incoming.originalSize) }
+            }
         }
-        val expectedOriginalSize = incoming.originalSize
-            .coerceAtLeast(0L)
-            .coerceAtMost(trimmedWireBytes.size.toLong())
-            .toInt()
-        val fileBytes = if (expectedOriginalSize in 1 until trimmedWireBytes.size) {
-            trimmedWireBytes.copyOf(expectedOriginalSize)
-        } else {
-            trimmedWireBytes
-        }
-        val actualChecksum = incoming.checksum?.let { sha256(fileBytes) }
+
+        val actualChecksum = incoming.checksum?.let { incoming.digest?.digest()?.toHexString() }
         if (incoming.checksum != null && actualChecksum != null && !incoming.checksum.equals(actualChecksum, ignoreCase = true)) {
             val message = "Restore failed for ${incoming.filename}: checksum mismatch"
             onStatus(message)
+            incoming.tempFile.delete()
             WebRtcTransferProgressStore.fail(transferOwnerId, fileId, message, SystemClock.elapsedRealtime())
             return
         }
@@ -405,7 +466,11 @@ class OneImageWebRtcClient(
         val safeName = incoming.filename.replace(Regex("[^A-Za-z0-9._-]"), "_")
         val directory = File(context.cacheDir, "oneimage-results").apply { mkdirs() }
         val file = File(directory, "${incoming.fileId}-$safeName")
-        file.writeBytes(fileBytes)
+        if (file.exists()) file.delete()
+        if (!incoming.tempFile.renameTo(file)) {
+            incoming.tempFile.copyTo(file, overwrite = true)
+            incoming.tempFile.delete()
+        }
         
         dataChannel?.let { channel ->
             sendJson(
@@ -414,8 +479,8 @@ class OneImageWebRtcClient(
                     .put("type", "file_ack")
                     .put("fileId", incoming.fileId)
                     .put("filename", incoming.filename)
-                    .put("size", fileBytes.size)
-                    .put("wireSize", trimmedWireBytes.size)
+                    .put("size", file.length())
+                    .put("wireSize", incoming.bytesReceived)
             )
         }
         onFileReceived(
@@ -433,7 +498,7 @@ class OneImageWebRtcClient(
     }
 
     private fun reportIncomingProgress(file: IncomingFile) {
-        val received = file.bytes.size().toLong()
+        val received = file.bytesReceived
         val percent = if (file.size <= 0L) 0 else ((received * 100L) / file.size).toInt().coerceIn(0, 100)
         val nowMs = SystemClock.elapsedRealtime()
         if (received < file.size && percent == file.lastProgressPercent && nowMs - file.lastProgressAtMs < PROGRESS_UPDATE_INTERVAL_MS) {
@@ -476,10 +541,13 @@ class OneImageWebRtcClient(
         val taskId: String?,
         val label: String?,
         val checksum: String?,
+        val tempFile: File,
+        val output: OutputStream,
+        val digest: MessageDigest?,
         var endReceived: Boolean = false,
         var lastProgressPercent: Int = 0,
         var lastProgressAtMs: Long = 0L,
-        val bytes: ByteArrayOutputStream = ByteArrayOutputStream()
+        var bytesReceived: Long = 0L
     )
 
     private data class FramedChunk(
@@ -509,10 +577,13 @@ class OneImageWebRtcClient(
         }
     }
 
-    private fun sha256(bytes: ByteArray): String =
-        MessageDigest.getInstance("SHA-256")
-            .digest(bytes)
-            .joinToString("") { "%02x".format(it) }
+    private fun cleanupIncomingFile(file: IncomingFile) {
+        runCatching { file.output.close() }
+        runCatching { file.tempFile.delete() }
+    }
+
+    private fun ByteArray.toHexString(): String =
+        joinToString("") { "%02x".format(it) }
 
     private class LoggingSdpObserver(private val label: String) : SdpObserver {
         override fun onCreateSuccess(description: SessionDescription?) = Unit

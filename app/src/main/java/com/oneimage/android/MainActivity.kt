@@ -182,6 +182,7 @@ class MainActivity : ComponentActivity() {
                             composable<Screen.Settings> {
                                 SettingsScreen(
                                     onBack = { navController.popBackStack() },
+                                    onLegalClick = { navController.navigate(Screen.Legal) },
                                     darkModeEnabled = darkModeEnabled,
                                     onDarkModeChanged = { darkModeEnabled = it },
                                     onLogout = {

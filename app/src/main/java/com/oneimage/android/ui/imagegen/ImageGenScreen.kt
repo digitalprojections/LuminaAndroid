@@ -23,16 +23,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
@@ -75,7 +74,7 @@ import coil.compose.AsyncImage
 import com.oneimage.android.api.OneImageTask
 import com.oneimage.android.api.OneImageTaskResult
 import com.oneimage.android.ui.shared.CancelTaskConfirmationDialog
-import com.oneimage.android.ui.shared.WorkflowHistoryList
+import java.util.Locale
 
 private val ExpectedAngles = listOf(
     "Close Up",
@@ -195,7 +194,7 @@ fun ImageGenScreen(
                 } else {
                     Text("Generate Angles · ${state.estimatedCredits} credits", fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(18.dp))
                 }
             }
 
@@ -481,7 +480,7 @@ private fun AngleSlot(
     onSave: (OneImageTaskResult) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val renderable = result?.let(::isRenderableResult) == true
+    val renderableResult = result?.takeIf(::isRenderableResult)
     Surface(
         modifier = modifier
             .height(220.dp)
@@ -501,8 +500,8 @@ private fun AngleSlot(
                 contentAlignment = Alignment.Center
             ) {
                 when {
-                    renderable && result != null -> AsyncImage(
-                        model = result.url,
+                    renderableResult != null -> AsyncImage(
+                        model = renderableResult.url,
                         contentDescription = angle,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
@@ -516,8 +515,8 @@ private fun AngleSlot(
                     else -> Text("Standby", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            if (renderable && result != null) {
-                TextButton(onClick = { onSave(result) }, modifier = Modifier.align(Alignment.End)) {
+            if (renderableResult != null) {
+                TextButton(onClick = { onSave(renderableResult) }, modifier = Modifier.align(Alignment.End)) {
                     Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("Save to device")
@@ -541,7 +540,7 @@ private fun progressFraction(task: OneImageTask): Float {
 private fun formatSize(bytes: Long): String {
     if (bytes <= 0L) return "0 KB"
     val mb = bytes / (1024f * 1024f)
-    return if (mb >= 1f) String.format("%.1f MB", mb) else "${(bytes / 1024L).coerceAtLeast(1L)} KB"
+    return if (mb >= 1f) String.format(Locale.US, "%.1f MB", mb) else "${(bytes / 1024L).coerceAtLeast(1L)} KB"
 }
 
 
