@@ -14,4 +14,15 @@ class LipSyncUiStateTest {
         assertEquals(16, medium.estimatedCredits)
         assertEquals(44, long.estimatedCredits)
     }
+
+    @Test
+    fun fullAudioCreditsUseAudioDuration() {
+        val state = LipSyncUiState(
+            audioDurationSeconds = 61.2f,
+            durationSeconds = 10f,
+            useFullAudio = true
+        )
+
+        assertEquals(248, state.estimatedCredits)
+    }
 }

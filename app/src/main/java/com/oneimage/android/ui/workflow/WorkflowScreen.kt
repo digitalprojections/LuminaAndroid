@@ -1,8 +1,12 @@
 package com.oneimage.android.ui.workflow
 
+import android.content.ContentValues
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -104,12 +108,15 @@ import com.oneimage.android.ui.shared.ResultVideoPreview
 import com.oneimage.android.ui.shared.WorkflowHistoryList
 import com.oneimage.android.ui.shared.CancelTaskConfirmationDialog
 import com.oneimage.android.ui.shared.isPlayableVideoResult
+import com.oneimage.android.ui.shared.savedAssetFilename
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.net.URI
 import java.net.URL
+import java.util.Locale
 
 private const val DEFAULT_IMPORTANT_DESCRIPTION = "describe the image in smallest details, describe it as a high definition game asset style image asset. Do not describe as pixel art, because it is high definition"
 private const val TASK_HISTORY_LIMIT = 250L
@@ -718,6 +725,16 @@ fun WorkflowScreen(
                     }
                     status = "Restoring results..."
                 }
+            }, onSave = { result ->
+                scope.launch {
+                    try {
+                        val savedName = saveWorkflowResultToDownloads(context, spec.title, result)
+                        status = "Saved $savedName"
+                        error = null
+                    } catch (saveError: Exception) {
+                        error = saveError.message ?: "Could not save result."
+                    }
+                }
             })
 
         }
@@ -1092,7 +1109,11 @@ private fun CharacterDurationControl(
 }
 
 @Composable
-private fun ResultsCard(results: List<OneImageTaskResult>, onRestore: () -> Unit) {
+private fun ResultsCard(
+    results: List<OneImageTaskResult>,
+    onRestore: () -> Unit,
+    onSave: (OneImageTaskResult) -> Unit
+) {
     if (results.isEmpty()) return
     Card(shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1145,6 +1166,11 @@ private fun ResultsCard(results: List<OneImageTaskResult>, onRestore: () -> Unit
                                     Text("Restore")
                                 }
                             } else {
+                                TextButton(onClick = { onSave(result) }) {
+                                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Download")
+                                }
                                 Text(
                                     text = when {
                                         renderableImage -> "Shown below"
@@ -1310,6 +1336,77 @@ private val IMAGE_RESULT_EXTENSIONS = setOf(
     ".webp",
     ".gif"
 )
+
+private suspend fun saveWorkflowResultToDownloads(
+    context: Context,
+    workflowName: String,
+    result: OneImageTaskResult
+): String = withContext(Dispatchers.IO) {
+    if (result.url.startsWith("webrtc://")) error("Restore this result before downloading.")
+
+    val savedName = savedAssetFilename(workflowName, result, defaultExtensionForResult(result))
+    val filename = safeDownloadFilename(savedName)
+    val values = ContentValues().apply {
+        put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+        put(MediaStore.MediaColumns.MIME_TYPE, mimeTypeForFilename(filename))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/OneStudio")
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+    }
+    val resolver = context.contentResolver
+    val outputUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+    } else {
+        resolver.insert(MediaStore.Files.getContentUri("external"), values)
+    } ?: error("Could not create download file.")
+
+    try {
+        resolver.openOutputStream(outputUri)?.use { output ->
+            openResultStream(context, result.url).use { input -> input.copyTo(output) }
+        } ?: error("Could not write download file.")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            values.clear()
+            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+            resolver.update(outputUri, values, null, null)
+        }
+        filename
+    } catch (saveError: Exception) {
+        resolver.delete(outputUri, null, null)
+        throw saveError
+    }
+}
+
+private fun openResultStream(context: Context, url: String) = when {
+    url.startsWith("file:") -> File(URI(url)).inputStream()
+    url.startsWith("content:") -> context.contentResolver.openInputStream(Uri.parse(url))
+        ?: error("Could not read result file.")
+    url.startsWith("http://") || url.startsWith("https://") -> URL(url).openStream()
+    else -> error("Unsupported result URL.")
+}
+
+private fun safeDownloadFilename(value: String): String =
+    value.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "onestudio-result" }
+
+private fun defaultExtensionForResult(result: OneImageTaskResult): String = when {
+    isPlayableVideoResult(result) -> "mp4"
+    isRenderableImageResult(result) -> "png"
+    else -> "bin"
+}
+
+private fun mimeTypeForFilename(filename: String): String = when (filename.substringAfterLast('.', "").lowercase(Locale.US)) {
+    "png" -> "image/png"
+    "jpg", "jpeg" -> "image/jpeg"
+    "webp" -> "image/webp"
+    "gif" -> "image/gif"
+    "mp4" -> "video/mp4"
+    "webm" -> "video/webm"
+    "glb" -> "model/gltf-binary"
+    "gltf" -> "model/gltf+json"
+    "obj" -> "model/obj"
+    "zip" -> "application/zip"
+    else -> "application/octet-stream"
+}
 
 private fun historyTaskTitle(spec: WorkflowSpec, task: OneImageTask): String = when (spec.kind) {
     WorkflowKind.MeshModel -> "Game Mesh"

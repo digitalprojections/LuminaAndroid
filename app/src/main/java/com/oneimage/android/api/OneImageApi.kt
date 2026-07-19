@@ -250,7 +250,8 @@ object OneImageApi {
         frameRate: Int = 24,
         width: Int = 512,
         height: Int = 512,
-        audioDuration: Float = duration
+        audioDuration: Float = duration,
+        useFullAudio: Boolean = false
     ): String = withContext(Dispatchers.IO) {
         val payload = JSONObject()
             .put("clientId", clientId)
@@ -258,6 +259,7 @@ object OneImageApi {
             .put("seed", 0)
             .put("audioStart", audioStart)
             .put("duration", duration)
+            .put("lipSyncMode", if (useFullAudio) "full_audio" else "clip")
             .put("frameRate", frameRate)
             .put("width", width)
             .put("height", height)

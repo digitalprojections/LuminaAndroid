@@ -21,7 +21,7 @@ data class WorkflowPricingConfig(
     val oneLipSyncPerSecond: Int = 4,
     val characterReplacementPerSecond: Int = 4,
     val qwenImageEditFlat: Int = 30,
-    val refRestyleFlat: Int = 24,
+    val refRestyleFlat: Int = 12,
     val meshModelFlat: Int = 50,
     val gameAssetUpscalerFlat: Int = 30
 ) {

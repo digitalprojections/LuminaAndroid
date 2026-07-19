@@ -91,13 +91,14 @@ fun MeshModelScreen(
 
     val result = state.results.firstOrNull()
     val modelUrl = result?.url
+    val canPreviewResult = result?.let(::canPreviewMeshResult) ?: false
     var viewerSource by remember(modelUrl) { mutableStateOf<MeshViewerSource?>(null) }
     var isPreparingViewer by remember(modelUrl) { mutableStateOf(false) }
     var cancelAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
-    LaunchedEffect(modelUrl) {
+    LaunchedEffect(modelUrl, canPreviewResult) {
         val url = modelUrl
-        if (url == null) {
+        if (url == null || !canPreviewResult) {
             viewerSource = null
             return@LaunchedEffect
         }
@@ -184,6 +185,7 @@ fun MeshModelScreen(
             OutputPanel(
                 state = state,
                 result = result,
+                canPreviewResult = canPreviewResult,
                 viewerSource = viewerSource,
                 isPreparingViewer = isPreparingViewer,
                 viewerBackground = viewerBackground,
@@ -411,6 +413,7 @@ private fun StatusPanel(state: MeshModelUiState) {
 private fun OutputPanel(
     state: MeshModelUiState,
     result: OneImageTaskResult?,
+    canPreviewResult: Boolean,
     viewerSource: MeshViewerSource?,
     isPreparingViewer: Boolean,
     viewerBackground: String,
@@ -532,6 +535,13 @@ private fun OutputPanel(
                             modifier = Modifier.fillMaxSize()
                         )
                     }
+                    result != null && !canPreviewResult -> {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Default.ViewInAr, contentDescription = null, size = 44.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Model file ready", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text(result.filename.ifBlank { "Download result" }, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                     state.phase == MeshModelPhase.Running || state.phase == MeshModelPhase.Restoring -> {
                         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             CircularProgressIndicator()
@@ -555,29 +565,31 @@ private fun OutputPanel(
                 }
             }
 
-            if (result != null && viewerSource != null) {
+            if (result != null && (viewerSource != null || !canPreviewResult)) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.Palette, contentDescription = null, size = 16.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("Background", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(modifier = Modifier.weight(1f))
-                        MESH_VIEWER_BACKGROUND_PRESETS.forEach { colorStr ->
-                            val color = Color(android.graphics.Color.parseColor(colorStr))
-                            Box(
-                                modifier = Modifier
-                                    .size(24.dp)
-                                    .clip(CircleShape)
-                                    .background(color)
-                                    .border(
-                                        width = if (viewerBackground.lowercase() == colorStr.lowercase()) 2.dp else 1.dp,
-                                        color = if (viewerBackground.lowercase() == colorStr.lowercase()) MaterialTheme.colorScheme.primary else Color.LightGray,
-                                        shape = CircleShape
-                                    )
-                                    .clickable { onBackgroundChange(colorStr) }
-                            )
+                    if (viewerSource != null) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Palette, contentDescription = null, size = 16.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Background", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.weight(1f))
+                            MESH_VIEWER_BACKGROUND_PRESETS.forEach { colorStr ->
+                                val color = Color(android.graphics.Color.parseColor(colorStr))
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .clip(CircleShape)
+                                        .background(color)
+                                        .border(
+                                            width = if (viewerBackground.lowercase() == colorStr.lowercase()) 2.dp else 1.dp,
+                                            color = if (viewerBackground.lowercase() == colorStr.lowercase()) MaterialTheme.colorScheme.primary else Color.LightGray,
+                                            shape = CircleShape
+                                        )
+                                        .clickable { onBackgroundChange(colorStr) }
+                                )
+                            }
                         }
                     }
 
@@ -644,6 +656,23 @@ private fun cacheMeshViewerFile(context: Context, uri: Uri): MeshViewerSource? {
         localPath = localPath,
         mimeType = mimeType
     )
+}
+
+private fun canPreviewMeshResult(result: OneImageTaskResult): Boolean {
+    val extension = listOf(result.filename, result.url)
+        .asSequence()
+        .map { value ->
+            value
+                .substringBefore('?')
+                .substringBefore('#')
+                .substringAfterLast('/')
+                .substringAfterLast('\\')
+                .substringAfterLast('.', "")
+                .lowercase()
+        }
+        .firstOrNull { it.isNotBlank() }
+        .orEmpty()
+    return extension == "glb" || extension == "gltf"
 }
 
 private data class MeshViewerSource(

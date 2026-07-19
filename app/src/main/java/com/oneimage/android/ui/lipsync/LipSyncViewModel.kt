@@ -76,6 +76,7 @@ data class LipSyncUiState(
     val audioDurationSeconds: Float = 0f,
     val audioStartSeconds: Float = 0f,
     val durationSeconds: Float = 10f,
+    val useFullAudio: Boolean = false,
     val phase: LipSyncPhase = LipSyncPhase.Idle,
     val statusMessage: String = "Ready",
     val error: String? = null,
@@ -102,11 +103,14 @@ data class LipSyncUiState(
             val start = audioStartSeconds.coerceAtLeast(0f)
             val audioDuration = audioDurationSeconds.coerceAtLeast(0f)
 
-            return audioDuration > 0f && duration > 0f && start >= 0f && start < audioDuration && start + duration <= audioDuration
+            return audioDuration > 0f && (
+                useFullAudio ||
+                    (duration > 0f && start >= 0f && start < audioDuration && start + duration <= audioDuration)
+                )
         }
 
     val estimatedCredits: Int
-        get() = pricing.lipSyncCredits(durationSeconds).coerceAtLeast(pricing.oneLipSyncPerSecond.coerceAtLeast(1))
+        get() = pricing.lipSyncCredits(if (useFullAudio) audioDurationSeconds else durationSeconds).coerceAtLeast(pricing.oneLipSyncPerSecond.coerceAtLeast(1))
 
     val hasEnoughCredits: Boolean
         get() = profile?.hasEnoughCredits(estimatedCredits) == true
@@ -200,7 +204,7 @@ class LipSyncViewModel : ViewModel() {
                     audioFileInfo = info,
                     audioDurationSeconds = duration,
                     audioStartSeconds = 0f,
-                    durationSeconds = min(10f, duration.coerceAtLeast(0.1f)),
+                    durationSeconds = if (_uiState.value.useFullAudio) duration else min(10f, duration.coerceAtLeast(0.1f)),
                     phase = LipSyncPhase.Idle,
                     statusMessage = "Ready",
                     error = null,
@@ -241,6 +245,16 @@ class LipSyncViewModel : ViewModel() {
         val parsed = value.toFloatOrNull() ?: 10f
         val remaining = (current.audioDurationSeconds - current.audioStartSeconds).coerceAtLeast(0.1f)
         _uiState.value = current.copy(durationSeconds = parsed.coerceIn(0.1f, remaining), saveMessage = null)
+    }
+
+    fun updateUseFullAudio(value: Boolean) {
+        val current = _uiState.value
+        _uiState.value = current.copy(
+            useFullAudio = value,
+            audioStartSeconds = if (value) 0f else current.audioStartSeconds,
+            durationSeconds = if (value && current.audioDurationSeconds > 0f) current.audioDurationSeconds else current.durationSeconds,
+            saveMessage = null
+        )
     }
 
     fun generateLipSync(context: Context, fallbackClientId: String) {
@@ -292,12 +306,13 @@ class LipSyncViewModel : ViewModel() {
                     prompt = prompt,
                     imageFileInfo = transferImageFileInfo,
                     audioFileInfo = audioFileInfo,
-                    audioStart = initial.audioStartSeconds,
-                    duration = initial.durationSeconds,
+                    audioStart = if (initial.useFullAudio) 0f else initial.audioStartSeconds,
+                    duration = if (initial.useFullAudio) initial.audioDurationSeconds else initial.durationSeconds,
                     frameRate = 24,
                     width = initial.transferImageWidth,
                     height = initial.transferImageHeight,
-                    audioDuration = initial.audioDurationSeconds
+                    audioDuration = initial.audioDurationSeconds,
+                    useFullAudio = initial.useFullAudio
                 )
 
                 _uiState.value = _uiState.value.copy(phase = LipSyncPhase.Running, statusMessage = "Queued", currentTaskId = taskId)

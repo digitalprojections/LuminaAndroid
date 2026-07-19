@@ -343,7 +343,7 @@ class MeshModelViewModel : ViewModel() {
         val appContext = context.applicationContext
         viewModelScope.launch {
             try {
-                val savedName = savedAssetFilename("Game Mesh", result, "glb")
+                val savedName = savedAssetFilename("Game Mesh", result, "spz")
                 copyResultToDownloads(appContext, result, savedName)
                 _uiState.value = _uiState.value.copy(
                     saveMessage = "Saved $savedName",
@@ -530,7 +530,7 @@ class MeshModelViewModel : ViewModel() {
         val filename = safeFilename(savedName)
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-            put(MediaStore.MediaColumns.MIME_TYPE, "model/gltf-binary")
+            put(MediaStore.MediaColumns.MIME_TYPE, mimeTypeForFilename(filename))
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
@@ -578,8 +578,17 @@ class MeshModelViewModel : ViewModel() {
     }
 
     private fun safeFilename(value: String): String {
-        val cleaned = value.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "game_mesh_result.glb" }
-        return if (cleaned.contains(".")) cleaned else "$cleaned.glb"
+        val cleaned = value.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "game_mesh_result.spz" }
+        return if (cleaned.contains(".")) cleaned else "$cleaned.spz"
+    }
+
+    private fun mimeTypeForFilename(filename: String): String {
+        return when (filename.substringAfterLast('.', "").lowercase()) {
+            "glb" -> "model/gltf-binary"
+            "gltf" -> "model/gltf+json"
+            "obj", "ply" -> "text/plain"
+            else -> "application/octet-stream"
+        }
     }
 
     private fun taskFromDocument(document: DocumentSnapshot): OneImageTask? {

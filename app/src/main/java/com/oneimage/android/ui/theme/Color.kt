@@ -28,6 +28,7 @@ val LuminaLightMuted = Color(0xFF6C757D)
 val LuminaLightText = Color(0xFF212529) // Dark gray/black
 val LuminaLightSurfaceVariant = Color(0xFFF1F3F5)
 val LuminaLightPrimaryVariant = Color(0xFF00E5FF)
+val LuminaLightOnPrimaryContainer = Color(0xFF00363D)
 
 val ErrorRed = Color(0xFFFF5252)
 val SuccessGreen = Color(0xFF69F0AE)

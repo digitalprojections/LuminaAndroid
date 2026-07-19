@@ -46,6 +46,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -193,7 +194,8 @@ fun LipSyncScreen(
                 state = state,
                 onPickAudio = { audioPicker.launch("audio/mpeg") },
                 onStartChange = viewModel::updateAudioStart,
-                onDurationChange = viewModel::updateDuration
+                onDurationChange = viewModel::updateDuration,
+                onFullAudioChange = viewModel::updateUseFullAudio
             )
 
             Card(
@@ -286,7 +288,8 @@ private fun AudioSetupPanel(
     state: LipSyncUiState,
     onPickAudio: () -> Unit,
     onStartChange: (String) -> Unit,
-    onDurationChange: (String) -> Unit
+    onDurationChange: (String) -> Unit,
+    onFullAudioChange: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
@@ -440,7 +443,7 @@ private fun AudioSetupPanel(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(if (isPlaying && !isSegmentPreview) "Pause" else "Play")
                     }
-                    OutlinedButton(onClick = ::previewSegment, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)) {
+                    OutlinedButton(onClick = ::previewSegment, enabled = !state.useFullAudio, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)) {
                         Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Slice")
@@ -450,6 +453,7 @@ private fun AudioSetupPanel(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     OutlinedButton(
                         onClick = { onStartChange(roundToTenth(currentTime).toString()) },
+                        enabled = !state.useFullAudio,
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(8.dp)
                     ) {
@@ -459,6 +463,7 @@ private fun AudioSetupPanel(
                     }
                     OutlinedButton(
                         onClick = { onDurationChange(roundToTenth(currentTime - state.audioStartSeconds).coerceAtLeast(0.1f).toString()) },
+                        enabled = !state.useFullAudio,
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(8.dp)
                     ) {
@@ -472,11 +477,20 @@ private fun AudioSetupPanel(
                             onStartChange("0")
                             onDurationChange(minOf(10f, audioDuration).toString())
                         },
+                        enabled = !state.useFullAudio,
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = "Reset timing", modifier = Modifier.size(16.dp))
                     }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Full audio", fontWeight = FontWeight.SemiBold)
+                        Text("Use the automatic workflow for the whole MP3", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = state.useFullAudio, onCheckedChange = onFullAudioChange)
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
@@ -485,13 +499,15 @@ private fun AudioSetupPanel(
                         onValueChange = onStartChange,
                         label = { Text("Start") },
                         singleLine = true,
+                        enabled = !state.useFullAudio,
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedTextField(
                         value = trimFloat(state.durationSeconds),
                         onValueChange = onDurationChange,
-                        label = { Text("Duration") },
+                        label = { Text(if (state.useFullAudio) "Full duration" else "Duration") },
                         singleLine = true,
+                        enabled = !state.useFullAudio,
                         modifier = Modifier.weight(1f)
                     )
                 }
