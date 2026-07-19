@@ -35,14 +35,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -68,6 +68,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -81,18 +82,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import com.oneimage.android.ui.theme.PrimaryGradient
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import androidx.core.net.toUri
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
 import com.oneimage.android.BuildConfig
 import com.oneimage.android.api.AccountManager
 import com.oneimage.android.api.KeyframeWorkflowInput
-import com.oneimage.android.api.OneImageApi
-import com.oneimage.android.api.OneImageAccountProfile
-import com.oneimage.android.api.OneImageFileInfo
 import com.oneimage.android.api.LocalTaskResultStore
+import com.oneimage.android.api.OneImageAccountProfile
+import com.oneimage.android.api.OneImageApi
+import com.oneimage.android.api.OneImageFileInfo
 import com.oneimage.android.api.OneImageQueueStatus
 import com.oneimage.android.api.OneImageTask
 import com.oneimage.android.api.OneImageTaskResult
@@ -100,15 +105,11 @@ import com.oneimage.android.api.OneImageWebRtcClient
 import com.oneimage.android.api.WorkflowPricingConfig
 import com.oneimage.android.api.WorkflowPricingRepository
 import com.oneimage.android.api.prepareImageTransfer
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.DocumentSnapshot
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
-import com.oneimage.android.ui.shared.ResultVideoPreview
-import com.oneimage.android.ui.shared.WorkflowHistoryList
 import com.oneimage.android.ui.shared.CancelTaskConfirmationDialog
+import com.oneimage.android.ui.shared.ResultVideoPreview
 import com.oneimage.android.ui.shared.isPlayableVideoResult
 import com.oneimage.android.ui.shared.savedAssetFilename
+import com.oneimage.android.ui.theme.PrimaryGradient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -231,16 +232,6 @@ object WorkflowSpecs {
         )
     )
 
-    val MeshModel = WorkflowSpec(
-        kind = WorkflowKind.MeshModel,
-        taskType = "image_to_3d_mesh",
-        title = "Game Mesh",
-        subtitle = "Draft 3D model from one image",
-        action = "Create Model",
-        fileSlots = listOf(WorkflowFileSlot("meshImage", "Source image", "image/*", "Choose the object or asset image.")),
-        textSlots = emptyList()
-    )
-
     val GameAssetUpscaler = WorkflowSpec(
         kind = WorkflowKind.GameAssetUpscaler,
         taskType = "game_asset_upscaler",
@@ -303,14 +294,13 @@ fun WorkflowScreen(
             }
         }
     }
-    var keyframeCount by remember(spec.kind) { mutableStateOf(if (spec.kind == WorkflowKind.Keyframes) 2 else 0) }
+    var keyframeCount by remember(spec.kind) { mutableIntStateOf(if (spec.kind == WorkflowKind.Keyframes) 2 else 0) }
     var pendingSlot by remember { mutableStateOf<WorkflowFileSlot?>(null) }
     var isBusy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Ready") }
     var error by remember { mutableStateOf<String?>(null) }
     var currentTask by remember { mutableStateOf<OneImageTask?>(null) }
     var results by remember { mutableStateOf<List<OneImageTaskResult>>(emptyList()) }
-    var history by remember(spec.kind) { mutableStateOf<List<OneImageTask>>(emptyList()) }
     var transport by remember { mutableStateOf<OneImageWebRtcClient?>(null) }
     var cancelAction by remember(spec.kind) { mutableStateOf<(() -> Unit)?>(null) }
     var engineReady by remember(spec.kind) { mutableStateOf(false) }
@@ -333,7 +323,7 @@ fun WorkflowScreen(
                         if (spec.kind == WorkflowKind.CharacterReplacement && slot.id == "characterVideo") {
                             val maxDuration = durations[slot.id]?.coerceAtMost(15f)?.coerceAtLeast(0.1f) ?: 5f
                             val current = textValues["duration"]?.toFloatOrNull() ?: maxDuration.coerceAtMost(5f)
-                            textValues["duration"] = String.format("%.1f", current.coerceIn(0.1f, maxDuration))
+                            textValues["duration"] = formatTenths(current.coerceIn(0.1f, maxDuration))
                         }
                     } else if (slot.mime.startsWith("image")) {
                         val prepared = prepareImageTransfer(context, uri, slot.id)
@@ -358,7 +348,6 @@ fun WorkflowScreen(
 
     DisposableEffect(spec.taskType, clientId) {
         if (clientId.isBlank()) {
-            history = emptyList()
             onDispose { }
         } else {
             val listener = firestore.collection("tasks")
@@ -371,8 +360,6 @@ fun WorkflowScreen(
                     val tasks = snapshot.documents
                         .mapNotNull(::workflowTaskFromDocument)
                         .filter { it.type == spec.taskType }
-
-                    history = tasks
 
                     val openTaskId = currentTask?.id
                     val refreshedTask = openTaskId?.let { taskId -> tasks.firstOrNull { it.id == taskId } }
@@ -662,7 +649,7 @@ fun WorkflowScreen(
                         } else {
                             Text("${spec.action} · ${workflowEstimatedCreditsLabel(spec.kind, workflowPricing)}", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Black)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.Black)
+                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.Black)
                         }
                     }
                 }
@@ -846,7 +833,7 @@ private fun FileSlotCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(slot.label, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                 Text(fileInfo?.filename ?: slot.helper, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                duration?.takeIf { it > 0f }?.let { Text("${String.format("%.1f", it)}s", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                duration?.takeIf { it > 0f }?.let { Text(formatSeconds(it), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
             OutlinedButton(onClick = onPick, enabled = enabled, shape = RoundedCornerShape(12.dp)) { Text(if (fileInfo == null) "Pick" else "Change") }
         }
@@ -914,7 +901,7 @@ private fun KeyframesControls(
                             placeholder = { Text("25") },
                             supportingText = {
                                 val frames = (textValues[keyframeDurationId(index)] ?: "25").toIntOrNull()?.coerceIn(1, 250) ?: 25
-                                Text("$frames frames at 25 fps · ${(frames / 25f).let { String.format("%.1f", it) }}s")
+                                Text("$frames frames at 25 fps · ${formatSeconds(frames / 25f)}")
                             },
                             enabled = enabled,
                             modifier = Modifier.fillMaxWidth()
@@ -961,7 +948,6 @@ private fun SingleI2VControls(
     enabled: Boolean
 ) {
     val duration = SingleI2VConfig.clampDuration(values["duration"])
-    val frameRate = SingleI2VConfig.clampFrameRate(values["frameRate"])
     val resolutionMode = values["resolutionMode"].takeIf { it == "selector" } ?: "input"
     val aspectRatio = SingleI2VConfig.normalizeAspectRatio(values["aspectRatio"])
 
@@ -1089,16 +1075,16 @@ private fun CharacterDurationControl(
         }
         Slider(
             value = selected,
-            onValueChange = { onValueChange(String.format("%.1f", it.coerceIn(0.1f, maxDuration))) },
+            onValueChange = { onValueChange(formatTenths(it.coerceIn(0.1f, maxDuration))) },
             valueRange = 0.1f..maxDuration,
             enabled = enabled
         )
         OutlinedTextField(
-            value = value.ifBlank { String.format("%.1f", selected) },
+            value = value.ifBlank { formatTenths(selected) },
             onValueChange = { raw ->
                 val cleaned = raw.filter { it.isDigit() || it == '.' }.take(5)
                 val parsed = cleaned.toFloatOrNull()
-                onValueChange(if (parsed == null) cleaned else String.format("%.1f", parsed.coerceIn(0.1f, maxDuration)))
+                onValueChange(if (parsed == null) cleaned else formatTenths(parsed.coerceIn(0.1f, maxDuration)))
             },
             label = { Text("Seconds") },
             enabled = enabled,
@@ -1255,7 +1241,9 @@ private fun storySupportingText(kind: WorkflowKind, slotId: String, paragraphs: 
     }
 }
 
-private fun formatSeconds(value: Float): String = "${String.format("%.1f", value)}s"
+private fun formatTenths(value: Float): String = String.format(Locale.US, "%.1f", value)
+
+private fun formatSeconds(value: Float): String = "${formatTenths(value)}s"
 
 private fun workflowEstimatedCreditsLabel(kind: WorkflowKind, pricing: WorkflowPricingConfig): String = when (kind) {
     WorkflowKind.SingleI2V -> "${pricing.singleI2VFlat} credits"
@@ -1379,7 +1367,7 @@ private suspend fun saveWorkflowResultToDownloads(
 
 private fun openResultStream(context: Context, url: String) = when {
     url.startsWith("file:") -> File(URI(url)).inputStream()
-    url.startsWith("content:") -> context.contentResolver.openInputStream(Uri.parse(url))
+    url.startsWith("content:") -> context.contentResolver.openInputStream(url.toUri())
         ?: error("Could not read result file.")
     url.startsWith("http://") || url.startsWith("https://") -> URL(url).openStream()
     else -> error("Unsupported result URL.")
@@ -1406,11 +1394,6 @@ private fun mimeTypeForFilename(filename: String): String = when (filename.subst
     "obj" -> "model/obj"
     "zip" -> "application/zip"
     else -> "application/octet-stream"
-}
-
-private fun historyTaskTitle(spec: WorkflowSpec, task: OneImageTask): String = when (spec.kind) {
-    WorkflowKind.MeshModel -> "Game Mesh"
-    else -> task.prompt?.ifBlank { spec.title } ?: spec.title
 }
 
 private fun workflowTaskFromDocument(document: DocumentSnapshot): OneImageTask? {
