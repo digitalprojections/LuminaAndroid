@@ -4,7 +4,7 @@
     <selectionStates>
       <SelectionState runConfigName="app">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2026-07-04T15:27:36.482966300Z">
+        <DropdownSelection timestamp="2026-07-20T01:24:38.601933300Z">
           <Target type="DEFAULT_BOOT">
             <handle>
               <DeviceId pluginId="LocalEmulator" identifier="path=C:\Users\denta\.android\avd\pixel_5_-_api_34_1.avd" />

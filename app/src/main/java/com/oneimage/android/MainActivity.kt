@@ -18,12 +18,16 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.firebase.auth.FirebaseAuth
 import androidx.navigation.toRoute
 import androidx.navigation.compose.NavHost
@@ -52,6 +56,7 @@ import com.oneimage.android.ui.videogen.VideoGenScreen
 import com.oneimage.android.ui.workflow.WorkflowScreen
 import com.oneimage.android.ui.workflow.WorkflowSpecs
 import androidx.compose.foundation.isSystemInDarkTheme
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -70,13 +75,29 @@ class MainActivity : ComponentActivity() {
 
             LuminaTheme(darkTheme = darkModeEnabled) {
                 val context = LocalContext.current
+                val lifecycleOwner = LocalLifecycleOwner.current
+                val scope = rememberCoroutineScope()
                 val navController = rememberNavController()
                 val notificationState = rememberAppNotificationState()
                 val auth = remember { FirebaseAuth.getInstance() }
                 var signedInUid by remember { mutableStateOf(auth.currentUser?.uid) }
+                var pushNotificationsEnabled by remember {
+                    mutableStateOf(MobileNotificationManager.areNotificationsEnabled(context))
+                }
+                val refreshPushNotificationState = {
+                    pushNotificationsEnabled = MobileNotificationManager.areNotificationsEnabled(context)
+                }
+                val registerNotificationTokenIfAllowed = {
+                    refreshPushNotificationState()
+                    if (pushNotificationsEnabled) {
+                        scope.launch {
+                            runCatching { MobileNotificationManager.registerCurrentToken(context) }
+                        }
+                    }
+                }
                 val notificationPermissionLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestPermission()
-                ) { }
+                ) { registerNotificationTokenIfAllowed() }
 
                 DisposableEffect(auth) {
                     val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
@@ -86,14 +107,19 @@ class MainActivity : ComponentActivity() {
                     onDispose { auth.removeAuthStateListener(listener) }
                 }
 
-                LaunchedEffect(signedInUid) {
-                    if (signedInUid.isNullOrBlank()) return@LaunchedEffect
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-                    ) {
-                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                DisposableEffect(lifecycleOwner) {
+                    val observer = LifecycleEventObserver { _, event ->
+                        if (event == Lifecycle.Event.ON_RESUME) {
+                            refreshPushNotificationState()
+                        }
                     }
-                    runCatching { MobileNotificationManager.registerCurrentToken(context) }
+                    lifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+                }
+
+                LaunchedEffect(signedInUid, pushNotificationsEnabled) {
+                    if (signedInUid.isNullOrBlank()) return@LaunchedEffect
+                    if (pushNotificationsEnabled) runCatching { MobileNotificationManager.registerCurrentToken(context) }
                 }
 
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -185,6 +211,34 @@ class MainActivity : ComponentActivity() {
                                     onLegalClick = { navController.navigate(Screen.Legal) },
                                     darkModeEnabled = darkModeEnabled,
                                     onDarkModeChanged = { darkModeEnabled = it },
+                                    pushNotificationsEnabled = pushNotificationsEnabled,
+                                    pushNotificationsStatus = if (pushNotificationsEnabled) {
+                                        "Enabled"
+                                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                                    ) {
+                                        "Off. Turn on to allow alerts."
+                                    } else {
+                                        "Off in Android settings"
+                                    },
+                                    onPushNotificationsChanged = { enabled ->
+                                        if (enabled) {
+                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                                            ) {
+                                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                            } else {
+                                                refreshPushNotificationState()
+                                                if (pushNotificationsEnabled) {
+                                                    registerNotificationTokenIfAllowed()
+                                                } else {
+                                                    MobileNotificationManager.openNotificationSettings(context)
+                                                }
+                                            }
+                                        } else {
+                                            MobileNotificationManager.openNotificationSettings(context)
+                                        }
+                                    },
                                     onLogout = {
                                         navController.navigate(Screen.Login) {
                                             popUpTo(Screen.Dashboard) { inclusive = true }

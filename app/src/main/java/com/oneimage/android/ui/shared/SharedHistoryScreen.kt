@@ -161,7 +161,16 @@ fun SharedHistoryScreen(
     val scope = rememberCoroutineScope()
     val firestore = remember { FirebaseFirestore.getInstance() }
     val baseUrl = remember { BuildConfig.ONEIMAGE_API_BASE_URL.ifBlank { "https://genstudio.web.app/" } }
-    val clientId = remember { FirebaseAuth.getInstance().currentUser?.uid.orEmpty() }
+    val auth = remember { FirebaseAuth.getInstance() }
+    var clientId by remember { mutableStateOf(auth.currentUser?.uid.orEmpty()) }
+
+    DisposableEffect(auth) {
+        val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+            clientId = firebaseAuth.currentUser?.uid.orEmpty()
+        }
+        auth.addAuthStateListener(listener)
+        onDispose { auth.removeAuthStateListener(listener) }
+    }
 
     var history by remember(spec.workflowKey) { mutableStateOf<List<OneImageTask>>(emptyList()) }
     var selectedTaskId by rememberSaveable(spec.workflowKey) { mutableStateOf<String?>(null) }
@@ -173,6 +182,11 @@ fun SharedHistoryScreen(
     var transport by remember(spec.workflowKey) { mutableStateOf<OneImageWebRtcClient?>(null) }
     var cancelTask by remember(spec.workflowKey) { mutableStateOf<OneImageTask?>(null) }
     var exportTask by remember(spec.workflowKey) { mutableStateOf<OneImageTask?>(null) }
+
+    LaunchedEffect(clientId) {
+        transport?.close()
+        transport = null
+    }
 
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { folderUri ->
         val task = exportTask

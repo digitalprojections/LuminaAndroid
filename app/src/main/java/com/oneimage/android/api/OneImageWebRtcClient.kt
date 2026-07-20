@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.SystemClock
 import com.google.firebase.Timestamp
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.CoroutineScope
@@ -64,6 +65,7 @@ class OneImageWebRtcClient(
     private var isOfferWritten = false
     private var isClosing = false
     private var disconnectReported = false
+    private var activeClientId = clientId
     init {
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(context.applicationContext)
@@ -82,7 +84,7 @@ class OneImageWebRtcClient(
 
     fun isOpen(): Boolean = dataChannel?.state() == DataChannel.State.OPEN
 
-    fun isOpenFor(clientId: String): Boolean = this.clientId == clientId && isOpen()
+    fun isOpenFor(clientId: String): Boolean = activeClientId == clientId && isOpen()
 
     fun requestTaskResults(taskId: String, taskType: String = "image"): Boolean {
         val channel = dataChannel ?: return false
@@ -102,6 +104,11 @@ class OneImageWebRtcClient(
         close()
         isClosing = false
         disconnectReported = false
+        activeClientId = FirebaseAuth.getInstance().currentUser?.uid ?: clientId
+        if (activeClientId.isBlank()) {
+            onStatus("Please sign in again to open direct transfer.")
+            return@withContext false
+        }
 
         onStatus("Opening direct transfer...")
         val factory = PeerConnectionFactory.builder().createPeerConnectionFactory()
@@ -169,7 +176,7 @@ class OneImageWebRtcClient(
         firestore.collection("webrtc_signals").document(id).set(
             mapOf(
                 "offer" to (offer.description ?: ""),
-                "clientId" to clientId,
+                "clientId" to activeClientId,
                 "recipientId" to "local-agent",
                 "status" to "pending",
                 "createdAt" to Timestamp.now()
@@ -270,6 +277,7 @@ class OneImageWebRtcClient(
     }
 
     private fun sendCandidate(id: String, candidate: IceCandidate) {
+        val ownerId = activeClientId
         firestore.collection("webrtc_signals")
             .document(id)
             .collection("candidates")
@@ -281,6 +289,12 @@ class OneImageWebRtcClient(
                     "createdAt" to Timestamp.now()
                 )
             )
+            .addOnFailureListener { error ->
+                android.util.Log.w(
+                    "OneImageWebRTC",
+                    "Candidate write failed for $ownerId/$id: ${error.message}"
+                )
+            }
     }
 
     private fun handleDataChannelMessage(buffer: DataChannel.Buffer) {

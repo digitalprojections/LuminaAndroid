@@ -25,6 +25,9 @@ fun SettingsScreen(
     onLegalClick: () -> Unit,
     darkModeEnabled: Boolean,
     onDarkModeChanged: (Boolean) -> Unit,
+    pushNotificationsEnabled: Boolean,
+    pushNotificationsStatus: String,
+    onPushNotificationsChanged: (Boolean) -> Unit,
     onLogout: () -> Unit,
     accountViewModel: AccountViewModel = viewModel()
 ) {
@@ -155,13 +158,16 @@ fun SettingsScreen(
                         Column {
                             Text("Push Notifications")
                             Text(
-                                "Coming soon",
+                                pushNotificationsStatus,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 12.sp
                             )
                         }
                     }
-                    AssistChip(onClick = { }, enabled = false, label = { Text("Not enabled") })
+                    Switch(
+                        checked = pushNotificationsEnabled,
+                        onCheckedChange = onPushNotificationsChanged
+                    )
                 }
             }
 

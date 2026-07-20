@@ -275,7 +275,16 @@ fun WorkflowScreen(
     val workflowPricing by WorkflowPricingRepository.pricingFlow.collectAsState()
     val profile by AccountManager.profileFlow.collectAsState()
     val baseUrl = BuildConfig.ONEIMAGE_API_BASE_URL.ifBlank { "https://genstudio.web.app/" }
-    val clientId = remember { FirebaseAuth.getInstance().currentUser?.uid.orEmpty() }
+    val auth = remember { FirebaseAuth.getInstance() }
+    var clientId by remember { mutableStateOf(auth.currentUser?.uid.orEmpty()) }
+
+    DisposableEffect(auth) {
+        val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+            clientId = firebaseAuth.currentUser?.uid.orEmpty()
+        }
+        auth.addAuthStateListener(listener)
+        onDispose { auth.removeAuthStateListener(listener) }
+    }
 
     val selectedUris = remember(spec.kind) { mutableStateMapOf<String, Uri>() }
     val fileInfos = remember(spec.kind) { mutableStateMapOf<String, OneImageFileInfo>() }
@@ -343,6 +352,11 @@ fun WorkflowScreen(
 
     LaunchedEffect(spec.kind) {
         transport?.close()
+    }
+
+    LaunchedEffect(clientId) {
+        transport?.close()
+        transport = null
     }
 
     DisposableEffect(spec.taskType, clientId) {

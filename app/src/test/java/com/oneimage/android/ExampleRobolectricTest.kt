@@ -1,5 +1,6 @@
 package com.oneimage.android
 
+import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
@@ -9,7 +10,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [36])
+@Config(application = Application::class, sdk = [36])
 class ExampleRobolectricTest {
 
   @Test

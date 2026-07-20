@@ -7,7 +7,9 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -24,6 +26,33 @@ import kotlin.math.absoluteValue
 
 object MobileNotificationManager {
     const val WORKFLOW_CHANNEL_ID = "workflow_updates"
+
+    fun areNotificationsEnabled(context: Context): Boolean {
+        val appContext = context.applicationContext
+        if (!NotificationManagerCompat.from(appContext).areNotificationsEnabled()) return false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(appContext, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return false
+        }
+        return true
+    }
+
+    fun openNotificationSettings(context: Context) {
+        val appContext = context.applicationContext
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                putExtra(Settings.EXTRA_APP_PACKAGE, appContext.packageName)
+            }
+        } else {
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.parse("package:${appContext.packageName}")
+            }
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        appContext.startActivity(intent)
+    }
 
     fun ensureNotificationChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -43,6 +72,7 @@ object MobileNotificationManager {
     suspend fun registerCurrentToken(context: Context) {
         val appContext = context.applicationContext
         val user = FirebaseAuth.getInstance().currentUser ?: return
+        if (!areNotificationsEnabled(appContext)) return
         val token = FirebaseMessaging.getInstance().token.awaitResult()
         if (token.isBlank()) return
 
@@ -62,11 +92,7 @@ object MobileNotificationManager {
         notificationId: String
     ) {
         ensureNotificationChannel(context)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            return
-        }
+        if (!areNotificationsEnabled(context)) return
 
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
