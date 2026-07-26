@@ -1,9 +1,13 @@
 package com.oneimage.android.ui.settings
 
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -11,11 +15,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.firebase.auth.FirebaseAuth
+import com.oneimage.android.BuildConfig
 import com.oneimage.android.ui.account.AccountViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -32,6 +38,7 @@ fun SettingsScreen(
     accountViewModel: AccountViewModel = viewModel()
 ) {
     val accountState by accountViewModel.uiState.collectAsState()
+    val context = LocalContext.current
     val user = FirebaseAuth.getInstance().currentUser
     val profile = accountState.profile
     val legalAcceptanceRequired = profile != null && !profile.hasAcceptedCurrentLegal
@@ -88,6 +95,29 @@ fun SettingsScreen(
                 AccountRow("Status", profile?.statusLabel ?: if (accountState.isLoading) "Syncing..." else "unpaid")
                 AccountRow("Credits", profile?.creditBalanceText ?: if (accountState.isLoading) "Syncing..." else "0")
                 AccountRow("Account ID", user?.uid ?: if (accountState.isLoading) "Syncing..." else "Unavailable")
+                Spacer(modifier = Modifier.height(12.dp))
+                FilledTonalButton(
+                    onClick = {
+                        val intent = Intent(Intent.ACTION_VIEW, buildWebAppUri())
+                        runCatching {
+                            context.startActivity(intent)
+                        }.onFailure {
+                            Toast.makeText(context, "Could not open GenStudio web.", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Open GenStudio Web")
+                    Spacer(modifier = Modifier.weight(1f))
+                    Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                }
+                Text(
+                    text = "Opens the GenStudio web app in your browser. Your account is shared across Android and web.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
                 if (accountState.error != null) {
                     Text(
                         text = accountState.error ?: "",
@@ -199,6 +229,11 @@ fun SettingsScreen(
             }
         }
     }
+}
+
+private fun buildWebAppUri(): Uri {
+    val baseUrl = BuildConfig.ONEIMAGE_WEB_APP_URL.ifBlank { "https://genstudio.web.app/" }
+    return Uri.parse(baseUrl)
 }
 
 @Composable

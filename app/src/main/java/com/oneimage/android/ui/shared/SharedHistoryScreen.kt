@@ -432,13 +432,15 @@ fun SharedHistoryScreen(
                 availability = selectedAvailability,
                 resultIndex = selectedResultIndex,
                 resultCount = selectedTask?.results?.size ?: 0,
+                isMeshHistory = spec.taskType == SharedHistorySpecs.MeshModel.taskType,
                 previewSize = previewSize,
                 previewFrame = previewFrame,
                 previewFit = previewFit,
                 onSelectResult = { selectedResultIndex = it },
                 onPreviewSize = { previewSizeKey = it.key },
                 onPreviewFrame = { previewFrameKey = it.key },
-                onPreviewFit = { previewFitKey = it.key }
+                onPreviewFit = { previewFitKey = it.key },
+                onRestore = { selectedTask?.let(restoreTaskAction) }
             )
 
             if (!message.isNullOrBlank() || selectedTask?.status == "failed") {
@@ -559,16 +561,20 @@ private fun SharedHistoryHeroCard(
     availability: LocalTaskResultAvailability?,
     resultIndex: Int,
     resultCount: Int,
+    isMeshHistory: Boolean,
     previewSize: PreviewSizeOption,
     previewFrame: PreviewFrameOption,
     previewFit: PreviewFitOption,
     onSelectResult: (Int) -> Unit,
     onPreviewSize: (PreviewSizeOption) -> Unit,
     onPreviewFrame: (PreviewFrameOption) -> Unit,
-    onPreviewFit: (PreviewFitOption) -> Unit
+    onPreviewFit: (PreviewFitOption) -> Unit,
+    onRestore: () -> Unit
 ) {
     val tone = task?.let { sharedHistoryStatusTone(it) }
     val isImagePreview = result != null && sharedHistoryIsRenderableImage(result)
+    val isMeshTask = isMeshHistory || task?.type == SharedHistorySpecs.MeshModel.taskType
+    val isMeshPreview = isMeshTask && result != null && isMeshModelResult(result)
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -601,7 +607,15 @@ private fun SharedHistoryHeroCard(
                             ResultVideoPreview(result = result, modifier = Modifier.fillMaxSize())
                         }
 
-                        task?.type == SharedHistorySpecs.MeshModel.taskType -> {
+                        isMeshPreview -> {
+                            MeshResultPreview(
+                                result = result,
+                                modifier = Modifier.fillMaxSize(),
+                                onRestore = onRestore
+                            )
+                        }
+
+                        isMeshTask -> {
                             SharedHistoryPlaceholder(
                                 icon = Icons.Default.ViewInAr,
                                 title = "Mesh result selected",
