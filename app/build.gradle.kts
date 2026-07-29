@@ -41,6 +41,9 @@ val versionProperties = loadVersionProperties(rootDir)
 fun envString(name: String, defaultValue: String = ""): String =
   escapeBuildConfigValue(appEnv.getProperty(name, defaultValue))
 
+fun envInt(name: String, defaultValue: Int): Int =
+  appEnv.getProperty(name)?.toIntOrNull() ?: defaultValue
+
 fun signingValue(name: String): String? =
   System.getenv(name) ?: appEnv.getProperty(name)
 
@@ -68,6 +71,10 @@ android {
     // Server-only values such as REST_API_ID stay in .env but are intentionally not compiled into the APK.
     buildConfigField("String", "ONEIMAGE_API_BASE_URL", "\"${envString("ONEIMAGE_API_BASE_URL", "https://genstudio.web.app/")}\"")
     buildConfigField("String", "ONEIMAGE_WEB_APP_URL", "\"${envString("ONEIMAGE_WEB_APP_URL", "https://genstudio.web.app/")}\"")
+    buildConfigField("String", "ADMOB_REWARDED_AD_UNIT_ID", "\"${envString("ADMOB_REWARDED_AD_UNIT_ID", "ca-app-pub-3940256099942544/5224354917")}\"")
+    buildConfigField("int", "REWARDED_AD_CREDIT_AMOUNT", envInt("REWARDED_AD_CREDIT_AMOUNT", 10).toString())
+    buildConfigField("int", "ANDROID_STARTER_CREDITS", envInt("ANDROID_STARTER_CREDITS", 5).toString())
+    manifestPlaceholders["adMobAppId"] = envString("ADMOB_APP_ID", "ca-app-pub-3940256099942544~3347511713")
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
@@ -141,6 +148,7 @@ dependencies {
   implementation(libs.firebase.auth)
   implementation(libs.firebase.firestore)
   implementation(libs.firebase.messaging)
+  implementation(libs.play.services.ads)
   implementation(libs.play.services.auth)
   implementation(libs.google.webrtc)
   implementation(libs.kotlinx.serialization.json)

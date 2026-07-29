@@ -13,6 +13,7 @@ kotlinxSerializationJson = "1.8.0"
 webrtc = "1.3.10"
 firebaseAuth = "23.2.0"
 playServicesAuth = "21.3.0"
+playServicesAds = "25.4.0"
 retrofitSerialization = "1.0.0"
 composeBom = "2024.09.00"
 googleDevtoolsKsp = "2.3.5"
@@ -96,6 +97,7 @@ firebase-auth = { group = "com.google.firebase", name = "firebase-auth" }
 firebase-firestore = { group = "com.google.firebase", name = "firebase-firestore" }
 firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging" }
 play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "playServicesAuth" }
+play-services-ads = { group = "com.google.android.gms", name = "play-services-ads", version.ref = "playServicesAds" }
 google-webrtc = { group = "io.getstream", name = "stream-webrtc-android", version.ref = "webrtc" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 retrofit-converter-serialization = { group = "com.jakewharton.retrofit", name = "retrofit2-kotlinx-serialization-converter", version.ref = "retrofitSerialization" }

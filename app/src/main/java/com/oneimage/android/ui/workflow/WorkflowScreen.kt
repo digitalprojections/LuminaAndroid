@@ -308,6 +308,7 @@ fun WorkflowScreen(
     var status by remember { mutableStateOf("Ready") }
     var error by remember { mutableStateOf<String?>(null) }
     var currentTask by remember { mutableStateOf<OneImageTask?>(null) }
+    var submittedTaskId by remember(spec.kind) { mutableStateOf<String?>(null) }
     var results by remember { mutableStateOf<List<OneImageTaskResult>>(emptyList()) }
     var transport by remember { mutableStateOf<OneImageWebRtcClient?>(null) }
     var cancelAction by remember(spec.kind) { mutableStateOf<(() -> Unit)?>(null) }
@@ -374,7 +375,7 @@ fun WorkflowScreen(
                         .mapNotNull(::workflowTaskFromDocument)
                         .filter { it.type == spec.taskType }
 
-                    val openTaskId = currentTask?.id
+                    val openTaskId = submittedTaskId ?: currentTask?.id
                     val refreshedTask = openTaskId?.let { taskId -> tasks.firstOrNull { it.id == taskId } }
                     if (refreshedTask != null) {
                         val localTask = LocalTaskResultStore.overlayTask(refreshedTask)
@@ -383,7 +384,7 @@ fun WorkflowScreen(
                         status = localTask.statusDetails ?: localTask.status
                         error = if (localTask.status == "failed") localTask.error ?: "Workflow failed." else error
                         isBusy = localTask.status in setOf("pending", "processing", "initializing")
-                    } else if (openTaskId == null) {
+                    } else if (openTaskId == null && !isBusy) {
                         tasks.firstOrNull { it.status in setOf("pending", "processing", "initializing") }?.let { activeTask ->
                             val localTask = LocalTaskResultStore.overlayTask(activeTask)
                             currentTask = localTask
@@ -604,6 +605,7 @@ fun WorkflowScreen(
                         error = null
                         results = emptyList()
                         currentTask = null
+                        submittedTaskId = null
                         status = "Opening direct transfer..."
                         try {
                             val newTransport = OneImageWebRtcClient(
@@ -611,7 +613,10 @@ fun WorkflowScreen(
                                 clientId = clientId,
                                 onStatus = { status = it },
                                 onFileReceived = { file ->
-                                    results = mergeResults(results, listOf(LocalTaskResultStore.persistReceivedFile(file)))
+                                    val expectedTaskId = submittedTaskId ?: currentTask?.id
+                                    if (file.taskId == null || file.taskId == expectedTaskId) {
+                                        results = mergeResults(results, listOf(LocalTaskResultStore.persistReceivedFile(file)))
+                                    }
                                 },
                                 onDisconnected = {
                                     status = "Direct transfer disconnected"
@@ -627,6 +632,7 @@ fun WorkflowScreen(
                             if (!newTransport.connect()) error("WebRTC direct transfer did not connect to the local agent.")
                             status = "Creating task..."
                             val taskId = submitWorkflow(spec, baseUrl, clientId, activeFileSlots, fileInfos, imageDimensions, durations, textValues)
+                            submittedTaskId = taskId
                             status = "Queued"
                             repeat(240) {
                                 val task = OneImageApi.getImageTask(baseUrl, clientId, taskId)
@@ -711,7 +717,9 @@ fun WorkflowScreen(
                             clientId = clientId,
                             onStatus = { status = it },
                             onFileReceived = { file ->
-                                results = mergeResults(results, listOf(LocalTaskResultStore.persistReceivedFile(file)))
+                                if (file.taskId == null || file.taskId == task.id) {
+                                    results = mergeResults(results, listOf(LocalTaskResultStore.persistReceivedFile(file)))
+                                }
                             },
                             onDisconnected = {
                                 status = "Restore interrupted"

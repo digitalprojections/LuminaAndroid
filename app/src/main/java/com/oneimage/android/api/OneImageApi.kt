@@ -496,9 +496,13 @@ object OneImageApi {
 
     suspend fun bootstrapAccountProfile(
         baseUrl: String,
-        legalAcceptanceMethod: String? = null
+        legalAcceptanceMethod: String? = null,
+        platform: String? = "android"
     ): OneImageAccountProfile = withContext(Dispatchers.IO) {
         val payload = JSONObject()
+        if (!platform.isNullOrBlank()) {
+            payload.put("platform", platform)
+        }
         if (!legalAcceptanceMethod.isNullOrBlank()) {
             payload.put("legalAcceptance", legalAcceptancePayload(legalAcceptanceMethod))
         }

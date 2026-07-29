@@ -10,6 +10,7 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -29,6 +30,7 @@ import com.oneimage.android.ui.account.AccountViewModel
 fun SettingsScreen(
     onBack: () -> Unit,
     onLegalClick: () -> Unit,
+    onEarnCreditsClick: () -> Unit,
     darkModeEnabled: Boolean,
     onDarkModeChanged: (Boolean) -> Unit,
     pushNotificationsEnabled: Boolean,
@@ -96,6 +98,15 @@ fun SettingsScreen(
                 AccountRow("Credits", profile?.creditBalanceText ?: if (accountState.isLoading) "Syncing..." else "0")
                 AccountRow("Account ID", user?.uid ?: if (accountState.isLoading) "Syncing..." else "Unavailable")
                 Spacer(modifier = Modifier.height(12.dp))
+                FilledTonalButton(
+                    onClick = onEarnCreditsClick,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.PlayCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Earn Credits")
+                }
+                Spacer(modifier = Modifier.height(8.dp))
                 FilledTonalButton(
                     onClick = {
                         val intent = Intent(Intent.ACTION_VIEW, buildWebAppUri())

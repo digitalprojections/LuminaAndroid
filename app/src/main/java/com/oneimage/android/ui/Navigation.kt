@@ -10,6 +10,9 @@ sealed class Screen {
     object Dashboard : Screen()
 
     @Serializable
+    object EarnCredits : Screen()
+
+    @Serializable
     object ImageGen : Screen()
 
     @Serializable

@@ -41,6 +41,7 @@ fun DashboardScreen(
     )
 
     val items = listOf(
+        DashboardItem("Earn Credits", Icons.Default.Paid, Screen.EarnCredits, "Watch rewarded ads for credits"),
         DashboardItem("Image Generation", Icons.Default.AutoAwesome, Screen.ImageGen, "Consistent character views"),
         DashboardItem("Video Generation", Icons.Default.Movie, Screen.VideoGen, "Short video from two images"),
         DashboardItem("Single I2V", Icons.Default.SmartDisplay, Screen.SingleI2V, "One image into a clip up to 10 seconds"),

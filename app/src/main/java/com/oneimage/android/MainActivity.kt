@@ -35,6 +35,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.oneimage.android.notifications.MobileNotificationManager
 import com.oneimage.android.ui.Screen
+import com.oneimage.android.ui.account.EarnCreditsScreen
 import com.oneimage.android.ui.auth.LoginScreen
 import com.oneimage.android.ui.dashboard.DashboardScreen
 import com.oneimage.android.ui.datasync.DataSyncScreen
@@ -137,6 +138,9 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                             composable<Screen.Dashboard> { DashboardScreen(navController) }
+                            composable<Screen.EarnCredits> {
+                                EarnCreditsScreen(onBack = { navController.popBackStack() })
+                            }
                             composable<Screen.ImageGen> {
                                 ImageGenScreen(
                                     onBack = { goBackToDashboard(navController) },
@@ -209,6 +213,7 @@ class MainActivity : ComponentActivity() {
                                 SettingsScreen(
                                     onBack = { navController.popBackStack() },
                                     onLegalClick = { navController.navigate(Screen.Legal) },
+                                    onEarnCreditsClick = { navController.navigate(Screen.EarnCredits) },
                                     darkModeEnabled = darkModeEnabled,
                                     onDarkModeChanged = { darkModeEnabled = it },
                                     pushNotificationsEnabled = pushNotificationsEnabled,
