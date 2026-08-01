@@ -72,8 +72,9 @@ android {
     buildConfigField("String", "ONEIMAGE_API_BASE_URL", "\"${envString("ONEIMAGE_API_BASE_URL", "https://genstudio.web.app/")}\"")
     buildConfigField("String", "ONEIMAGE_WEB_APP_URL", "\"${envString("ONEIMAGE_WEB_APP_URL", "https://genstudio.web.app/")}\"")
     buildConfigField("String", "ADMOB_REWARDED_AD_UNIT_ID", "\"${envString("ADMOB_REWARDED_AD_UNIT_ID", "ca-app-pub-3940256099942544/5224354917")}\"")
+    buildConfigField("String", "GOOGLE_PLAY_CREDIT_PRODUCT_IDS", "\"${envString("GOOGLE_PLAY_CREDIT_PRODUCT_IDS", "genstudio_credits_small_200,genstudio_credits_medium_625,genstudio_credits_large_2250")}\"")
     buildConfigField("int", "REWARDED_AD_CREDIT_AMOUNT", envInt("REWARDED_AD_CREDIT_AMOUNT", 10).toString())
-    buildConfigField("int", "ANDROID_STARTER_CREDITS", envInt("ANDROID_STARTER_CREDITS", 5).toString())
+    buildConfigField("int", "ANDROID_STARTER_CREDITS", envInt("ANDROID_STARTER_CREDITS", 0).toString())
     manifestPlaceholders["adMobAppId"] = envString("ADMOB_APP_ID", "ca-app-pub-3940256099942544~3347511713")
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -149,6 +150,7 @@ dependencies {
   implementation(libs.firebase.firestore)
   implementation(libs.firebase.messaging)
   implementation(libs.play.services.ads)
+  implementation(libs.billing.ktx)
   implementation(libs.play.services.auth)
   implementation(libs.google.webrtc)
   implementation(libs.kotlinx.serialization.json)

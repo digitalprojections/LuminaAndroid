@@ -53,6 +53,16 @@ data class OneImageQueueStatus(
     val estimatedWaitTime: Int
 )
 
+data class GooglePlayCreditPurchaseResult(
+    val granted: Boolean,
+    val duplicate: Boolean,
+    val skippedUnlimited: Boolean,
+    val consumed: Boolean,
+    val consumePending: Boolean,
+    val creditsGranted: Long,
+    val nextCredits: Long?
+)
+
 data class OneImageAccountProfile(
     val uid: String,
     val email: String?,
@@ -577,6 +587,44 @@ object OneImageApi {
             if (!response.isSuccessful || json.optBoolean("success") == false) {
                 error(json.optString("message", "Could not register notification token."))
             }
+        }
+    }
+
+    suspend fun confirmGooglePlayCreditPurchase(
+        baseUrl: String,
+        productId: String,
+        purchaseToken: String,
+        orderId: String? = null
+    ): GooglePlayCreditPurchaseResult = withContext(Dispatchers.IO) {
+        val payload = JSONObject()
+            .put("productId", productId)
+            .put("purchaseToken", purchaseToken)
+        if (!orderId.isNullOrBlank()) payload.put("orderId", orderId)
+
+        val requestBuilder = Request.Builder()
+            .url("${baseUrl.trimEnd('/')}/api/mobile/google-play/credit-purchase")
+            .post(payload.toString().toRequestBody("application/json".toMediaType()))
+            .addHeader("Content-Type", "application/json")
+
+        val authToken = FirebaseAuth.getInstance().currentUser?.getIdToken(false)?.awaitResult()?.token
+            ?: error("Please sign in again.")
+        requestBuilder.addHeader("Authorization", "Bearer $authToken")
+
+        client.newCall(requestBuilder.build()).execute().use { response ->
+            val text = response.body?.string().orEmpty()
+            val json = JSONObject(text.ifBlank { "{}" })
+            if (!response.isSuccessful || json.optBoolean("success") == false) {
+                error(json.optString("message", "Could not verify this Google Play purchase."))
+            }
+            GooglePlayCreditPurchaseResult(
+                granted = json.optBoolean("granted", false),
+                duplicate = json.optBoolean("duplicate", false),
+                skippedUnlimited = json.optBoolean("skippedUnlimited", false),
+                consumed = json.optBoolean("consumed", false),
+                consumePending = json.optBoolean("consumePending", false),
+                creditsGranted = json.optLong("creditsGranted", 0L),
+                nextCredits = if (json.has("nextCredits")) json.optLong("nextCredits") else null
+            )
         }
     }
 

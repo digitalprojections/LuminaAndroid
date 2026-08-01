@@ -144,67 +144,77 @@ class MainActivity : ComponentActivity() {
                             composable<Screen.ImageGen> {
                                 ImageGenScreen(
                                     onBack = { goBackToDashboard(navController) },
-                                    onHistory = { navController.navigate(Screen.History(SharedHistorySpecs.Image.workflowKey)) }
+                                    onHistory = { navController.navigate(Screen.History(SharedHistorySpecs.Image.workflowKey)) },
+                                    onCreditsClick = { navController.navigate(Screen.EarnCredits) }
                                 )
                             }
                             composable<Screen.VideoGen> {
                                 VideoGenScreen(
                                     onBack = { goBackToDashboard(navController) },
-                                    onHistory = { navController.navigate(Screen.History(SharedHistorySpecs.Video.workflowKey)) }
+                                    onHistory = { navController.navigate(Screen.History(SharedHistorySpecs.Video.workflowKey)) },
+                                    onCreditsClick = { navController.navigate(Screen.EarnCredits) }
                                 )
                             }
                             composable<Screen.SingleI2V> {
                                 WorkflowScreen(
                                     spec = WorkflowSpecs.SingleI2V,
                                     onBack = { goBackToDashboard(navController) },
-                                    onHistory = { navController.navigate(Screen.History(SharedHistorySpecs.SingleI2V.workflowKey)) }
+                                    onHistory = { navController.navigate(Screen.History(SharedHistorySpecs.SingleI2V.workflowKey)) },
+                                    onCreditsClick = { navController.navigate(Screen.EarnCredits) }
                                 )
                             }
                             composable<Screen.LipSync> {
                                 LipSyncScreen(
                                     onBack = { goBackToDashboard(navController) },
-                                    onHistory = { navController.navigate(Screen.History(SharedHistorySpecs.LipSync.workflowKey)) }
+                                    onHistory = { navController.navigate(Screen.History(SharedHistorySpecs.LipSync.workflowKey)) },
+                                    onCreditsClick = { navController.navigate(Screen.EarnCredits) }
                                 )
                             }
                             composable<Screen.CharacterReplacement> {
                                 WorkflowScreen(
                                     spec = WorkflowSpecs.CharacterReplacement,
                                     onBack = { goBackToDashboard(navController) },
-                                    onHistory = { navController.navigate(Screen.History(SharedHistorySpecs.CharacterReplacement.workflowKey)) }
+                                    onHistory = { navController.navigate(Screen.History(SharedHistorySpecs.CharacterReplacement.workflowKey)) },
+                                    onCreditsClick = { navController.navigate(Screen.EarnCredits) }
                                 )
                             }
                             composable<Screen.StoryImages> {
                                 WorkflowScreen(
                                     spec = WorkflowSpecs.StoryImages,
                                     onBack = { goBackToDashboard(navController) },
-                                    onHistory = { navController.navigate(Screen.History(SharedHistorySpecs.StoryImages.workflowKey)) }
+                                    onHistory = { navController.navigate(Screen.History(SharedHistorySpecs.StoryImages.workflowKey)) },
+                                    onCreditsClick = { navController.navigate(Screen.EarnCredits) }
                                 )
                             }
                             composable<Screen.RefRestyle> {
                                 WorkflowScreen(
                                     spec = WorkflowSpecs.RefRestyle,
                                     onBack = { goBackToDashboard(navController) },
-                                    onHistory = { navController.navigate(Screen.History(SharedHistorySpecs.RefRestyle.workflowKey)) }
+                                    onHistory = { navController.navigate(Screen.History(SharedHistorySpecs.RefRestyle.workflowKey)) },
+                                    onCreditsClick = { navController.navigate(Screen.EarnCredits) }
                                 )
                             }
                             composable<Screen.MeshModel> {
                                 MeshModelScreen(
                                     onBack = { goBackToDashboard(navController) },
-                                    onHistory = { navController.navigate(Screen.History(SharedHistorySpecs.MeshModel.workflowKey)) }
+                                    onHistory = { navController.navigate(Screen.History(SharedHistorySpecs.MeshModel.workflowKey)) },
+                                    onCreditsClick = { navController.navigate(Screen.EarnCredits) }
                                 )
                             }
                             composable<Screen.GameAssetUpscaler> {
                                 WorkflowScreen(
                                     spec = WorkflowSpecs.GameAssetUpscaler,
                                     onBack = { goBackToDashboard(navController) },
-                                    onHistory = { navController.navigate(Screen.History(SharedHistorySpecs.GameAssetUpscaler.workflowKey)) }
+                                    onHistory = { navController.navigate(Screen.History(SharedHistorySpecs.GameAssetUpscaler.workflowKey)) },
+                                    onCreditsClick = { navController.navigate(Screen.EarnCredits) }
                                 )
                             }
                             composable<Screen.Keyframes> {
                                 WorkflowScreen(
                                     spec = WorkflowSpecs.Keyframes,
                                     onBack = { goBackToDashboard(navController) },
-                                    onHistory = { navController.navigate(Screen.History(SharedHistorySpecs.Keyframes.workflowKey)) }
+                                    onHistory = { navController.navigate(Screen.History(SharedHistorySpecs.Keyframes.workflowKey)) },
+                                    onCreditsClick = { navController.navigate(Screen.EarnCredits) }
                                 )
                             }
                             composable<Screen.DataSync> { DataSyncScreen(onBack = { navController.popBackStack() }) }

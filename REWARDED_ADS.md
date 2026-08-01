@@ -8,7 +8,7 @@ The Android build defaults to Google's rewarded-ad test IDs:
 
 - `ADMOB_APP_ID=ca-app-pub-3940256099942544~3347511713`
 - `ADMOB_REWARDED_AD_UNIT_ID=ca-app-pub-3940256099942544/5224354917`
-- `ANDROID_STARTER_CREDITS=5`
+- `ANDROID_STARTER_CREDITS=0`
 - `REWARDED_AD_CREDIT_AMOUNT=10`
 
 These defaults are safe for local development and test builds. Replace them before publishing a production APK.
@@ -22,11 +22,11 @@ ONEIMAGE_API_BASE_URL=https://genstudio.web.app/
 ONEIMAGE_WEB_APP_URL=https://genstudio.web.app/
 ADMOB_APP_ID=ca-app-pub-your-publisher-id~your-app-id
 ADMOB_REWARDED_AD_UNIT_ID=ca-app-pub-your-publisher-id/your-rewarded-ad-unit-id
-ANDROID_STARTER_CREDITS=5
+ANDROID_STARTER_CREDITS=0
 REWARDED_AD_CREDIT_AMOUNT=10
 ```
 
-`ANDROID_STARTER_CREDITS` should stay below the cheapest generation cost so users must earn or buy credits before running a workflow.
+`ANDROID_STARTER_CREDITS` should stay at `0` when new users must buy or earn credits before using server compute.
 
 ## Backend Configuration
 
@@ -35,7 +35,7 @@ Set matching backend environment values in `OneImage/.env` or Firebase Functions
 ```properties
 ADMOB_REWARDED_AD_UNIT_ID=ca-app-pub-your-publisher-id/your-rewarded-ad-unit-id
 REWARDED_AD_CREDIT_AMOUNT=10
-ANDROID_STARTER_CREDITS=5
+ANDROID_STARTER_CREDITS=0
 ADMOB_REWARDED_SSV_KEYS_URL=https://www.gstatic.com/admob/reward/verifier-keys.json
 ```
 

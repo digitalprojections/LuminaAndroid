@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
@@ -78,6 +79,7 @@ private enum class MeshNetworkKind {
 fun MeshModelScreen(
     onBack: () -> Unit,
     onHistory: () -> Unit,
+    onCreditsClick: () -> Unit,
     viewModel: MeshModelViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -209,6 +211,7 @@ fun MeshModelScreen(
                 state = state,
                 canGenerate = canGenerate,
                 networkKind = networkKind,
+                onCreditsClick = onCreditsClick,
                 onGenerate = {
                     if (networkKind == MeshNetworkKind.Cellular) {
                         showMobileDataConfirm = true
@@ -351,6 +354,7 @@ private fun BuildPanel(
     state: MeshModelUiState,
     canGenerate: Boolean,
     networkKind: MeshNetworkKind,
+    onCreditsClick: () -> Unit,
     onGenerate: () -> Unit,
     onCancel: () -> Unit
 ) {
@@ -409,10 +413,17 @@ private fun BuildPanel(
                 )
             }
             if (!state.hasEnoughCredits) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("This account does not have enough credits.", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Credits are required before generation.", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                    }
+                    OutlinedButton(onClick = onCreditsClick, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                        Icon(Icons.Default.ShoppingCart, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Buy credits")
+                    }
                 }
             }
         }

@@ -43,7 +43,9 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.TaskAlt
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -267,7 +269,8 @@ object WorkflowSpecs {
 fun WorkflowScreen(
     spec: WorkflowSpec,
     onBack: () -> Unit,
-    onHistory: () -> Unit
+    onHistory: () -> Unit,
+    onCreditsClick: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -439,6 +442,7 @@ fun WorkflowScreen(
     val storyParagraphs = if (spec.kind == WorkflowKind.StoryImages) storyParagraphs(textValues["storyPrompt"].orEmpty()) else emptyList()
     val storyPromptLimitExceeded = storyParagraphs.any { it.length > STORY_PARAGRAPH_LIMIT }
     val estimatedCreditsForBalance = workflowEstimatedCreditsValue(spec.kind, workflowPricing, textValues, keyframeCount)
+    val hasEnoughCredits = profile?.hasEnoughCredits(estimatedCreditsForBalance) == true
     val ready = activeFileSlots.all { fileInfos[it.id] != null } && when (spec.kind) {
         WorkflowKind.Keyframes -> keyframeCount >= 2
         WorkflowKind.StoryImages -> storyParagraphs.isNotEmpty() && !storyPromptLimitExceeded
@@ -510,10 +514,18 @@ fun WorkflowScreen(
                 engineReady = engineReady,
                 queueStatus = queueStatus,
                 profile = profile,
-                hasEnoughCredits = profile?.hasEnoughCredits(estimatedCreditsForBalance) == true
+                hasEnoughCredits = hasEnoughCredits
             )
 
             StatusCard(status = status, task = currentTask, isBusy = isBusy, error = error)
+
+            if (!hasEnoughCredits) {
+                CreditRequiredCard(
+                    estimatedCredits = estimatedCreditsForBalance,
+                    availableCredits = profile?.creditBalanceText ?: "0",
+                    onCreditsClick = onCreditsClick
+                )
+            }
 
             if (spec.kind == WorkflowKind.Keyframes) {
                 KeyframesControls(
@@ -657,7 +669,7 @@ fun WorkflowScreen(
                         }
                     }
                 },
-                enabled = ready && !isBusy,
+                enabled = ready && !isBusy && hasEnoughCredits,
                 modifier = Modifier.fillMaxWidth().height(60.dp),
                 shape = RoundedCornerShape(30.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
@@ -774,6 +786,35 @@ private fun StatusCard(status: String, task: OneImageTask?, isBusy: Boolean, err
                 LinearProgressIndicator(progress = { progressFraction(it) }, modifier = Modifier.fillMaxWidth())
             }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
+        }
+    }
+}
+
+@Composable
+private fun CreditRequiredCard(
+    estimatedCredits: Int,
+    availableCredits: String,
+    onCreditsClick: () -> Unit
+) {
+    Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Credits required", color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Bold)
+                    Text(
+                        "$estimatedCredits credits needed. $availableCredits available.",
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+            OutlinedButton(onClick = onCreditsClick, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                Icon(Icons.Default.ShoppingCart, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Buy credits")
+            }
         }
     }
 }

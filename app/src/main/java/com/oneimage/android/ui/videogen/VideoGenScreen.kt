@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -83,6 +84,7 @@ import com.oneimage.android.ui.shared.isPlayableVideoResult
 fun VideoGenScreen(
     onBack: () -> Unit,
     onHistory: () -> Unit,
+    onCreditsClick: () -> Unit,
     viewModel: VideoGenViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -167,7 +169,8 @@ fun VideoGenScreen(
 
             QualityPanel(
                 state = state,
-                onHighQualityChanged = viewModel::setHighQuality
+                onHighQualityChanged = viewModel::setHighQuality,
+                onCreditsClick = onCreditsClick
             )
 
             Button(
@@ -375,7 +378,8 @@ private fun PromptPanel(
 @Composable
 private fun QualityPanel(
     state: VideoGenUiState,
-    onHighQualityChanged: (Boolean) -> Unit
+    onHighQualityChanged: (Boolean) -> Unit,
+    onCreditsClick: () -> Unit
 ) {
     val highQuality = !state.isLightning
     Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
@@ -403,10 +407,17 @@ private fun QualityPanel(
                 )
             }
             if (!state.hasEnoughCredits) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("This account does not have enough credits for the selected mode.", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Credits are required before generation.", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                    }
+                    OutlinedButton(onClick = onCreditsClick, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                        Icon(Icons.Default.ShoppingCart, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Buy credits")
+                    }
                 }
             }
         }

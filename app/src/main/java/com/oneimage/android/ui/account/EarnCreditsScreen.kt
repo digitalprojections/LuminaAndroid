@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Paid
 import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Button
 import androidx.compose.material3.ElevatedCard
@@ -62,22 +63,33 @@ fun EarnCreditsScreen(
             adUnitId = BuildConfig.ADMOB_REWARDED_AD_UNIT_ID
         )
     }
+    val googlePlayBilling = remember(context) {
+        GooglePlayCreditBillingManager(
+            context = context,
+            baseUrl = BuildConfig.ONEIMAGE_API_BASE_URL
+        )
+    }
     val adState by rewardedAds.state.collectAsState()
+    val billingState by googlePlayBilling.state.collectAsState()
 
     LaunchedEffect(userId) {
         if (userId.isNotBlank()) {
+            googlePlayBilling.start()
             rewardedAds.loadAd(userId)
         }
     }
 
-    DisposableEffect(rewardedAds) {
-        onDispose { rewardedAds.dispose() }
+    DisposableEffect(rewardedAds, googlePlayBilling) {
+        onDispose {
+            rewardedAds.dispose()
+            googlePlayBilling.dispose()
+        }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Earn Credits", fontWeight = FontWeight.Bold) },
+                title = { Text("Credits", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -125,13 +137,13 @@ fun EarnCreditsScreen(
 
                         CreditFactRow(
                             icon = Icons.Default.CheckCircle,
-                            title = "Starter balance",
-                            body = "${BuildConfig.ANDROID_STARTER_CREDITS} credits for Android accounts. This is below the cost of a generation."
+                            title = "Paid credits",
+                            body = "Generation requires credits. Buy a Google Play pack or earn rewarded-ad credits before starting."
                         )
                         CreditFactRow(
                             icon = Icons.Default.PlayCircle,
-                            title = "Rewarded ads",
-                            body = "Watch a rewarded ad to earn ${BuildConfig.REWARDED_AD_CREDIT_AMOUNT} credits after server verification."
+                            title = "Buy in app",
+                            body = "Credit packs are sold through Google Play and added after server verification."
                         )
                         CreditFactRow(
                             icon = Icons.Default.Sync,
@@ -143,7 +155,101 @@ fun EarnCreditsScreen(
             }
 
             item {
+                ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text("Google Play Credits", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                                Text("Buy credit packs", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                            }
+                            Icon(
+                                Icons.Default.ShoppingCart,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(30.dp)
+                            )
+                        }
+
+                        if (billingState.isConnecting || billingState.isLoadingProducts) {
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        }
+
+                        billingState.products.forEach { display ->
+                            CreditPackRow(
+                                display = display,
+                                busy = billingState.purchasingProductId == display.product.productId,
+                                enabled = userId.isNotBlank() &&
+                                    billingState.isReady &&
+                                    display.available &&
+                                    billingState.purchasingProductId == null,
+                                onBuy = {
+                                    val activity = context.findActivity()
+                                    if (activity == null) {
+                                        Toast.makeText(context, "Could not open Google Play from this screen.", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        googlePlayBilling.purchase(activity, display.product.productId, userId)
+                                    }
+                                }
+                            )
+                        }
+
+                        if (billingState.products.isEmpty() && !billingState.isLoadingProducts) {
+                            Text(
+                                text = "Credit packs are not available from Google Play yet.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp
+                            )
+                        }
+
+                        FilledTonalButton(
+                            onClick = { googlePlayBilling.refresh() },
+                            enabled = userId.isNotBlank() && !billingState.isLoadingProducts && billingState.purchasingProductId == null,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.size(8.dp))
+                            Text("Refresh Google Play")
+                        }
+
+                        billingState.statusMessage?.let { message ->
+                            Text(
+                                text = message,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp
+                            )
+                        }
+
+                        billingState.error?.let { error ->
+                            Text(
+                                text = error,
+                                color = MaterialTheme.colorScheme.error,
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Rewarded Ads", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text(
+                        "Watch an ad to earn ${BuildConfig.REWARDED_AD_CREDIT_AMOUNT} credits after server verification.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+
                     if (adState.isLoadingAd || adState.isShowingAd) {
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     }
@@ -209,6 +315,41 @@ fun EarnCreditsScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun CreditPackRow(
+    display: AndroidCreditProductDisplay,
+    busy: Boolean,
+    enabled: Boolean,
+    onBuy: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(display.title, fontWeight = FontWeight.SemiBold)
+            Text(
+                "${display.product.credits} credits",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 13.sp,
+                lineHeight = 18.sp
+            )
+        }
+        FilledTonalButton(
+            onClick = onBuy,
+            enabled = enabled
+        ) {
+            Icon(Icons.Default.ShoppingCart, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.size(8.dp))
+            Text(if (busy) "Buying..." else display.formattedPrice)
         }
     }
 }
