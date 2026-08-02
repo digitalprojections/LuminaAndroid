@@ -3,7 +3,10 @@ param(
   [string]$BundlePath = "$PSScriptRoot\..\app\build\outputs\bundle\release\app-release.aab",
   [string]$Track = "beta",
   [string]$ReleaseName = "",
-  [string]$ReleaseNotes = "Adds Google Play credit purchases and clear paid-credit access messaging."
+  [string]$ReleaseNotes = "Adds Google Play credit purchases and clear paid-credit access messaging.",
+  [string]$ServiceAccountKeyPath = "",
+  [string]$ServiceAccountEmail = "",
+  [switch]$ChangesNotSentForReview
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,11 +21,21 @@ function Invoke-JsonRequest {
 
   $headers = @{ Authorization = "Bearer $Token" }
   if ($null -eq $Body) {
-    return Invoke-RestMethod -Method $Method -Uri $Uri -Headers $headers
+    try {
+      return Invoke-RestMethod -Method $Method -Uri $Uri -Headers $headers
+    } catch {
+      $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+      throw "$($_.Exception.Message) $($reader.ReadToEnd())"
+    }
   }
 
   $json = $Body | ConvertTo-Json -Depth 12
-  return Invoke-RestMethod -Method $Method -Uri $Uri -Headers $headers -ContentType "application/json" -Body $json
+  try {
+    return Invoke-RestMethod -Method $Method -Uri $Uri -Headers $headers -ContentType "application/json" -Body $json
+  } catch {
+    $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+    throw "$($_.Exception.Message) $($reader.ReadToEnd())"
+  }
 }
 
 $resolvedBundle = Resolve-Path -LiteralPath $BundlePath
@@ -45,7 +58,23 @@ if ($env:GOOGLE_PLAY_ACCESS_TOKEN) {
   $token = $env:GOOGLE_PLAY_ACCESS_TOKEN.Trim()
 }
 if ([string]::IsNullOrWhiteSpace($token)) {
-  $token = (& gcloud.cmd auth print-access-token).Trim()
+  $gcloud = "C:\Users\denta\AppData\Local\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd"
+  if (-not (Test-Path -LiteralPath $gcloud)) {
+    $gcloud = "gcloud.cmd"
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($ServiceAccountKeyPath)) {
+    $resolvedKey = Resolve-Path -LiteralPath $ServiceAccountKeyPath
+    if ([string]::IsNullOrWhiteSpace($ServiceAccountEmail)) {
+      $keyJson = Get-Content -LiteralPath $resolvedKey -Raw | ConvertFrom-Json
+      $ServiceAccountEmail = $keyJson.client_email
+    }
+
+    & $gcloud auth activate-service-account $ServiceAccountEmail --key-file=$resolvedKey | Out-Null
+    $token = (& $gcloud auth print-access-token --account=$ServiceAccountEmail --scopes=https://www.googleapis.com/auth/androidpublisher).Trim()
+  } else {
+    $token = (& $gcloud auth print-access-token --scopes=https://www.googleapis.com/auth/androidpublisher).Trim()
+  }
 }
 if ([string]::IsNullOrWhiteSpace($token)) {
   throw "Could not obtain an Android Publisher access token from gcloud."
@@ -90,7 +119,11 @@ try {
   }
 
   $trackResult = Invoke-JsonRequest -Method "PUT" -Uri "$baseUrl/edits/$editId/tracks/$Track" -Token $token -Body $trackBody
-  $commit = Invoke-JsonRequest -Method "POST" -Uri "$baseUrl/edits/$editId`:commit" -Token $token
+  $commitUri = "$baseUrl/edits/$editId`:commit"
+  if ($ChangesNotSentForReview) {
+    $commitUri = "$commitUri`?changesNotSentForReview=true"
+  }
+  $commit = Invoke-JsonRequest -Method "POST" -Uri $commitUri -Token $token
 
   [pscustomobject]@{
     packageName = $PackageName
