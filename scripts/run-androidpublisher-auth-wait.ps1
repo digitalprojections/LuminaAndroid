@@ -8,6 +8,7 @@ New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $codePath = Join-Path $OutDir "code.txt"
 $logPath = Join-Path $OutDir "auth.log"
 $statusPath = Join-Path $OutDir "status.json"
+$gcloudPath = "C:\Users\denta\AppData\Local\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd"
 
 Remove-Item -LiteralPath $codePath -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $logPath -Force -ErrorAction SilentlyContinue
@@ -21,7 +22,7 @@ function Add-AuthLog {
 }
 
 $process = New-Object System.Diagnostics.Process
-$process.StartInfo.FileName = "gcloud.cmd"
+$process.StartInfo.FileName = $gcloudPath
 $process.StartInfo.Arguments = "auth application-default login --no-launch-browser --scopes=https://www.googleapis.com/auth/androidpublisher,https://www.googleapis.com/auth/cloud-platform"
 $process.StartInfo.UseShellExecute = $false
 $process.StartInfo.RedirectStandardInput = $true
