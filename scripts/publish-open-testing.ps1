@@ -40,7 +40,10 @@ if ([string]::IsNullOrWhiteSpace($ReleaseName)) {
   $ReleaseName = "GenStudio $versionName"
 }
 
-$token = ($env:GOOGLE_PLAY_ACCESS_TOKEN ?? "").Trim()
+$token = ""
+if ($env:GOOGLE_PLAY_ACCESS_TOKEN) {
+  $token = $env:GOOGLE_PLAY_ACCESS_TOKEN.Trim()
+}
 if ([string]::IsNullOrWhiteSpace($token)) {
   $token = (& gcloud.cmd auth print-access-token).Trim()
 }
