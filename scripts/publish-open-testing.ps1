@@ -40,7 +40,10 @@ if ([string]::IsNullOrWhiteSpace($ReleaseName)) {
   $ReleaseName = "GenStudio $versionName"
 }
 
-$token = (& gcloud.cmd auth print-access-token --scopes=https://www.googleapis.com/auth/androidpublisher).Trim()
+$token = ($env:GOOGLE_PLAY_ACCESS_TOKEN ?? "").Trim()
+if ([string]::IsNullOrWhiteSpace($token)) {
+  $token = (& gcloud.cmd auth print-access-token).Trim()
+}
 if ([string]::IsNullOrWhiteSpace($token)) {
   throw "Could not obtain an Android Publisher access token from gcloud."
 }
