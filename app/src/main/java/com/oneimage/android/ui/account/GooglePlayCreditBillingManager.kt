@@ -301,16 +301,19 @@ class GooglePlayCreditBillingManager(
         return digest.joinToString("") { "%02x".format(it) }.take(64)
     }
 
-    private fun configuredCreditProducts(): List<AndroidCreditProduct> {
-        val allowed = BuildConfig.GOOGLE_PLAY_CREDIT_PRODUCT_IDS
-            .split(",")
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-            .toSet()
-        return listOf(
-            AndroidCreditProduct("genstudio_credits_small_200", "Small", 200),
-            AndroidCreditProduct("genstudio_credits_medium_625", "Medium", 625),
-            AndroidCreditProduct("genstudio_credits_large_2250", "Large", 2250)
-        ).filter { allowed.isEmpty() || allowed.contains(it.productId) }
-    }
+    private fun configuredCreditProducts(): List<AndroidCreditProduct> =
+        configuredAndroidCreditProducts(BuildConfig.GOOGLE_PLAY_CREDIT_PRODUCT_IDS)
+}
+
+internal fun configuredAndroidCreditProducts(allowedProductIdsCsv: String): List<AndroidCreditProduct> {
+    val allowed = allowedProductIdsCsv
+        .split(",")
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .toSet()
+    return listOf(
+        AndroidCreditProduct("small_pack_200", "Small", 200),
+        AndroidCreditProduct("medium_625", "Medium", 625),
+        AndroidCreditProduct("large", "Large", 2250)
+    ).filter { allowed.isEmpty() || allowed.contains(it.productId) }
 }
