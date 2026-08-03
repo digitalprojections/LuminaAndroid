@@ -1095,9 +1095,25 @@ private data class SharedHistoryStatusTone(
     val icon: ImageVector
 )
 
+internal enum class SharedHistoryStatusToneKind {
+    Success,
+    Failed,
+    Cancelled,
+    Queued,
+    Running
+}
+
+internal fun sharedHistoryStatusToneKind(status: String): SharedHistoryStatusToneKind = when (status.trim().lowercase()) {
+    "completed", "success", "succeeded" -> SharedHistoryStatusToneKind.Success
+    "failed" -> SharedHistoryStatusToneKind.Failed
+    "cancelled", "canceled" -> SharedHistoryStatusToneKind.Cancelled
+    "pending", "initializing" -> SharedHistoryStatusToneKind.Queued
+    else -> SharedHistoryStatusToneKind.Running
+}
+
 @Composable
-private fun sharedHistoryStatusTone(task: OneImageTask): SharedHistoryStatusTone = when (task.status.lowercase()) {
-    "completed", "success", "succeeded" -> SharedHistoryStatusTone(
+private fun sharedHistoryStatusTone(task: OneImageTask): SharedHistoryStatusTone = when (sharedHistoryStatusToneKind(task.status)) {
+    SharedHistoryStatusToneKind.Success -> SharedHistoryStatusTone(
         label = "Success",
         accent = Color(0xFF3DDC97),
         container = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.92f),
@@ -1105,7 +1121,7 @@ private fun sharedHistoryStatusTone(task: OneImageTask): SharedHistoryStatusTone
         icon = Icons.Default.CheckCircle
     )
 
-    "failed" -> SharedHistoryStatusTone(
+    SharedHistoryStatusToneKind.Failed -> SharedHistoryStatusTone(
         label = "Failed",
         accent = MaterialTheme.colorScheme.error,
         container = MaterialTheme.colorScheme.errorContainer,
@@ -1113,7 +1129,15 @@ private fun sharedHistoryStatusTone(task: OneImageTask): SharedHistoryStatusTone
         icon = Icons.Default.ErrorOutline
     )
 
-    "pending", "initializing" -> SharedHistoryStatusTone(
+    SharedHistoryStatusToneKind.Cancelled -> SharedHistoryStatusTone(
+        label = "Cancelled",
+        accent = MaterialTheme.colorScheme.outline,
+        container = MaterialTheme.colorScheme.surfaceVariant,
+        content = MaterialTheme.colorScheme.onSurfaceVariant,
+        icon = Icons.Default.Cancel
+    )
+
+    SharedHistoryStatusToneKind.Queued -> SharedHistoryStatusTone(
         label = "Queued",
         accent = MaterialTheme.colorScheme.tertiary,
         container = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.92f),
@@ -1121,7 +1145,7 @@ private fun sharedHistoryStatusTone(task: OneImageTask): SharedHistoryStatusTone
         icon = Icons.Default.Schedule
     )
 
-    else -> SharedHistoryStatusTone(
+    SharedHistoryStatusToneKind.Running -> SharedHistoryStatusTone(
         label = "Running",
         accent = MaterialTheme.colorScheme.primary,
         container = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.92f),
