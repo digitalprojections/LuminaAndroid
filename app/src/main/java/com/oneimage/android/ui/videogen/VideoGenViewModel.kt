@@ -64,7 +64,9 @@ data class VideoGenUiState(
     val endTransferImageUri: Uri? = null,
     val endTransferFileInfo: OneImageFileInfo? = null,
     val duration: Int = VideoGenConfig.DEFAULT_DURATION_SECONDS,
+    val durationInput: String = VideoGenConfig.DEFAULT_DURATION_SECONDS.toString(),
     val frameRate: Int = VideoGenConfig.DEFAULT_FRAME_RATE,
+    val frameRateInput: String = VideoGenConfig.DEFAULT_FRAME_RATE.toString(),
     val outputResolution: VideoOutputResolution = VideoOutputResolution(512, 512),
     val prompt: String = "",
     val isLightning: Boolean = true,
@@ -214,16 +216,22 @@ class VideoGenViewModel : ViewModel() {
 
     fun updateDuration(value: String) {
         if (_uiState.value.isBusy) return
+        val current = _uiState.value
+        val input = VideoGenConfig.numericInputValue(value)
         _uiState.value = _uiState.value.copy(
-            duration = VideoGenConfig.clampDuration(value),
+            durationInput = input,
+            duration = VideoGenConfig.durationValueForInput(input, current.duration),
             saveMessage = null
         )
     }
 
     fun updateFrameRate(value: String) {
         if (_uiState.value.isBusy) return
+        val current = _uiState.value
+        val input = VideoGenConfig.numericInputValue(value)
         _uiState.value = _uiState.value.copy(
-            frameRate = VideoGenConfig.clampFrameRate(value),
+            frameRateInput = input,
+            frameRate = VideoGenConfig.frameRateValueForInput(input, current.frameRate),
             saveMessage = null
         )
     }

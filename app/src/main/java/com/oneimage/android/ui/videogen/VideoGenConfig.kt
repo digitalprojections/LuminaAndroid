@@ -33,6 +33,15 @@ internal object VideoGenConfig {
         ?.coerceIn(MIN_FRAME_RATE, MAX_FRAME_RATE)
         ?: DEFAULT_FRAME_RATE
 
+    fun numericInputValue(value: String, maxDigits: Int = 2): String =
+        value.filter { it.isDigit() }.take(maxDigits.coerceAtLeast(0))
+
+    fun durationValueForInput(input: String, current: Int): Int =
+        input.takeIf { it.isNotBlank() }?.let(::clampDuration) ?: current
+
+    fun frameRateValueForInput(input: String, current: Int): Int =
+        input.takeIf { it.isNotBlank() }?.let(::clampFrameRate) ?: current
+
     fun optimalResolution(width: Int, height: Int): VideoOutputResolution {
         val safeWidth = width.coerceAtLeast(1)
         val safeHeight = height.coerceAtLeast(1)

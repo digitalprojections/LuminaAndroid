@@ -388,7 +388,7 @@ private fun OutputSettingsPanel(
 
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                 OutlinedTextField(
-                    value = state.duration.toString(),
+                    value = state.durationInput,
                     onValueChange = onDurationChanged,
                     enabled = !state.isBusy,
                     label = { Text("Duration (s)") },
@@ -397,7 +397,7 @@ private fun OutputSettingsPanel(
                     modifier = Modifier.weight(1f)
                 )
                 OutlinedTextField(
-                    value = state.frameRate.toString(),
+                    value = state.frameRateInput,
                     onValueChange = onFrameRateChanged,
                     enabled = !state.isBusy,
                     label = { Text("FPS") },
