@@ -20,11 +20,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -32,7 +32,6 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
@@ -50,7 +49,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -66,6 +64,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -167,9 +166,10 @@ fun VideoGenScreen(
                 onPromptChanged = viewModel::updatePrompt
             )
 
-            QualityPanel(
+            OutputSettingsPanel(
                 state = state,
-                onHighQualityChanged = viewModel::setHighQuality,
+                onDurationChanged = viewModel::updateDuration,
+                onFrameRateChanged = viewModel::updateFrameRate,
                 onCreditsClick = onCreditsClick
             )
 
@@ -356,12 +356,12 @@ private fun PromptPanel(
 ) {
     Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Character Description", fontWeight = FontWeight.Bold)
+            Text("Motion Description", fontWeight = FontWeight.Bold)
             OutlinedTextField(
                 value = prompt,
                 onValueChange = onPromptChanged,
                 enabled = !isBusy,
-                placeholder = { Text("A futuristic samurai with neon blue armor...") },
+                placeholder = { Text("Slow camera push, natural motion, cinematic light...") },
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 4,
                 shape = RoundedCornerShape(8.dp),
@@ -370,33 +370,53 @@ private fun PromptPanel(
                     unfocusedContainerColor = MaterialTheme.colorScheme.surface
                 )
             )
-            Text("Use identity, clothing, materials, and style. One prompt drives all eight angles.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Describe the camera move, subject motion, and atmosphere between the two frames.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
 @Composable
-private fun QualityPanel(
+private fun OutputSettingsPanel(
     state: VideoGenUiState,
-    onHighQualityChanged: (Boolean) -> Unit,
+    onDurationChanged: (String) -> Unit,
+    onFrameRateChanged: (String) -> Unit,
     onCreditsClick: () -> Unit
 ) {
-    val highQuality = !state.isLightning
     Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(if (highQuality) Icons.Default.Settings else Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("High Quality", fontWeight = FontWeight.Bold)
-                    Text(
-                        if (highQuality) "Uses onetoeight_hq.json" else "Uses onetoeight.json",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Switch(checked = highQuality, onCheckedChange = onHighQualityChanged, enabled = !state.isBusy)
+            Text("Output Settings", fontWeight = FontWeight.Bold)
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = state.duration.toString(),
+                    onValueChange = onDurationChanged,
+                    enabled = !state.isBusy,
+                    label = { Text("Duration (s)") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedTextField(
+                    value = state.frameRate.toString(),
+                    onValueChange = onFrameRateChanged,
+                    enabled = !state.isBusy,
+                    label = { Text("FPS") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f)
+                )
             }
+
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text("Output resolution", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                Text(
+                    state.outputResolution.label,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("${state.estimatedCredits} credits per run", fontSize = 12.sp, modifier = Modifier.weight(1f))
                 Text(

@@ -41,13 +41,9 @@ import java.net.URI
 import java.net.URL
 import java.text.DateFormat
 import java.util.Date
-import kotlin.math.min
-import kotlin.math.roundToInt
 
 private const val TASK_HISTORY_LIMIT = 250L
 private const val ENGINE_STATUS_STALE_MS = 90_000L
-private const val MAX_INPUT_IMAGE_LONG_EDGE = 1080f
-private const val VIDEO_FRAME_RATE = 25
 enum class VideoGenPhase {
     Idle,
     Preparing,
@@ -67,7 +63,9 @@ data class VideoGenUiState(
     val endSourceImageUri: Uri? = null,
     val endTransferImageUri: Uri? = null,
     val endTransferFileInfo: OneImageFileInfo? = null,
-    val duration: Int = 6,
+    val duration: Int = VideoGenConfig.DEFAULT_DURATION_SECONDS,
+    val frameRate: Int = VideoGenConfig.DEFAULT_FRAME_RATE,
+    val outputResolution: VideoOutputResolution = VideoOutputResolution(512, 512),
     val prompt: String = "",
     val isLightning: Boolean = true,
     val phase: VideoGenPhase = VideoGenPhase.Idle,
@@ -174,6 +172,7 @@ class VideoGenViewModel : ViewModel() {
                     _uiState.value.copy(
                         startTransferImageUri = prepared.uri,
                         startTransferFileInfo = prepared.fileInfo,
+                        outputResolution = prepared.resolution,
                         phase = VideoGenPhase.Idle,
                         statusMessage = "Ready"
                     )
@@ -181,6 +180,7 @@ class VideoGenViewModel : ViewModel() {
                     _uiState.value.copy(
                         endTransferImageUri = prepared.uri,
                         endTransferFileInfo = prepared.fileInfo,
+                        outputResolution = prepared.resolution,
                         phase = VideoGenPhase.Idle,
                         statusMessage = "Ready"
                     )
@@ -212,9 +212,20 @@ class VideoGenViewModel : ViewModel() {
         _uiState.value = _uiState.value.copy(prompt = prompt, saveMessage = null)
     }
 
-    fun setHighQuality(enabled: Boolean) {
+    fun updateDuration(value: String) {
         if (_uiState.value.isBusy) return
-        _uiState.value = _uiState.value.copy(isLightning = !enabled)
+        _uiState.value = _uiState.value.copy(
+            duration = VideoGenConfig.clampDuration(value),
+            saveMessage = null
+        )
+    }
+
+    fun updateFrameRate(value: String) {
+        if (_uiState.value.isBusy) return
+        _uiState.value = _uiState.value.copy(
+            frameRate = VideoGenConfig.clampFrameRate(value),
+            saveMessage = null
+        )
     }
 
     fun clearSource() {
@@ -295,7 +306,9 @@ class VideoGenViewModel : ViewModel() {
                     startFileInfo = startFileInfo,
                     endFileInfo = endFileInfo,
                     duration = initial.duration,
-                    frameRate = VIDEO_FRAME_RATE
+                    frameRate = initial.frameRate,
+                    width = initial.outputResolution.width,
+                    height = initial.outputResolution.height
                 )
 
                 _uiState.value = _uiState.value.copy(
@@ -573,37 +586,23 @@ class VideoGenViewModel : ViewModel() {
 
     private suspend fun prepareImageForOneImage(context: Context, uri: Uri): PreparedImage = withContext(Dispatchers.IO) {
         val original = decodeBitmap(context, uri)
-        val ratio = min(MAX_INPUT_IMAGE_LONG_EDGE / original.width.toFloat(), MAX_INPUT_IMAGE_LONG_EDGE / original.height.toFloat()).coerceAtMost(1f)
-        val bitmap = if (ratio < 1f) {
-            Bitmap.createScaledBitmap(
-                original,
-                (original.width * ratio).roundToInt().coerceAtLeast(1),
-                (original.height * ratio).roundToInt().coerceAtLeast(1),
-                true
-            )
-        } else {
-            original
-        }
+        val resolution = VideoGenConfig.optimalResolution(original.width, original.height)
+        val bitmap = Bitmap.createScaledBitmap(original, resolution.width, resolution.height, true)
         val directory = File(context.cacheDir, "oneimage-inputs").apply { mkdirs() }
-        val file = File(directory, "oneimage_input_${System.currentTimeMillis()}.webp")
+        val file = File(directory, "onevideo_input_${System.currentTimeMillis()}.jpg")
         file.outputStream().use { output ->
-            @Suppress("DEPRECATION")
-            val format = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                Bitmap.CompressFormat.WEBP_LOSSY
-            } else {
-                Bitmap.CompressFormat.WEBP
-            }
-            bitmap.compress(format, 85, output)
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 85, output)
         }
-        if (bitmap !== original) bitmap.recycle()
+        bitmap.recycle()
         original.recycle()
         PreparedImage(
             uri = Uri.fromFile(file),
             fileInfo = OneImageFileInfo(
                 filename = file.name,
-                mimeType = "image/webp",
+                mimeType = "image/jpeg",
                 size = file.length()
-            )
+            ),
+            resolution = resolution
         )
     }
 
@@ -704,7 +703,11 @@ class VideoGenViewModel : ViewModel() {
     private fun long(value: Any?): Long = (value as? Number)?.toLong() ?: 0L
     private fun string(value: Any?): String = value?.toString() ?: ""
 
-    private data class PreparedImage(val uri: Uri, val fileInfo: OneImageFileInfo)
+    private data class PreparedImage(
+        val uri: Uri,
+        val fileInfo: OneImageFileInfo,
+        val resolution: VideoOutputResolution
+    )
 }
 
 fun OneImageTask.createdAtText(): String {
