@@ -126,8 +126,8 @@ data class OneImageAccountProfile(
 }
 
 object OneImageApi {
-    const val CURRENT_TERMS_VERSION = "2026-05-27"
-    const val CURRENT_PRIVACY_VERSION = "2026-05-16"
+    const val CURRENT_TERMS_VERSION = "2026-08-04"
+    const val CURRENT_PRIVACY_VERSION = "2026-08-04"
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)

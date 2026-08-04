@@ -7,6 +7,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -17,6 +18,8 @@ import com.oneimage.android.ui.shared.IndependentServiceNotice
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LegalScreen(onBack: () -> Unit) {
+    val uriHandler = LocalUriHandler.current
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -47,6 +50,13 @@ fun LegalScreen(onBack: () -> Unit) {
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = { uriHandler.openUri("https://genstudio.web.app/privacy_policy.html") },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Open full Privacy Policy")
+                }
                 Spacer(modifier = Modifier.height(24.dp))
             }
             item {
@@ -57,6 +67,47 @@ fun LegalScreen(onBack: () -> Unit) {
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = { uriHandler.openUri("https://genstudio.web.app/terms_of_service.html") },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Open full Terms of Service")
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+            item {
+                Text(text = "Account and Data Deletion", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "You can request account deletion in the app or from the external deletion page.",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = { uriHandler.openUri("https://genstudio.web.app/account_deletion.html") },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Open deletion instructions")
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+            item {
+                Text(text = "Commercial Disclosure", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Review payment timing, delivery, cancellation, refunds, and operating environment details before purchase.",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = { uriHandler.openUri("https://genstudio.web.app/commercial_disclosure.html") },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Open commercial disclosure")
+                }
             }
         }
     }
