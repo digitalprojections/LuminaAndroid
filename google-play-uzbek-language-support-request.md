@@ -26,7 +26,7 @@ Our app, GenStudio AI Creator, package name com.oneimage.android, targets users 
 
 > The requested language is not currently supported: uz-UZ.
 
-We are able to publish nearby/regional language listings such as Turkish, Kazakh, Kyrgyz, and Russian, but we cannot publish an Uzbek listing even though Uzbek is the primary language for our target market in Uzbekistan.
+We are able to publish Turkic-language listings such as Turkish, Kazakh, and Kyrgyz, and we are also able to publish Russian as another commonly used regional language. However, we cannot publish an Uzbek listing even though Uzbek is the primary language for our target market in Uzbekistan.
 
 We request that Google Play add Uzbek (uz-UZ) as a supported store listing language for:
 
@@ -64,9 +64,9 @@ Android Publisher API tested language codes:
 
 Supported comparison languages already accepted and published:
 
-- ru-RU
 - tr-TR
 - kk
 - ky-KG
+- ru-RU, as another supported regional language, not a Turkic language
 
 Uzbek listing draft is already prepared in store-listings.json.
