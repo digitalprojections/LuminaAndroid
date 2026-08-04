@@ -16,6 +16,27 @@
       "fullDescription": "GenStudio - это рабочая среда для AI-творчества: изображения, короткие видео, визуальные сцены для историй, lip sync клипы, замена персонажей и игровые ассеты.\n\nВ Android-приложении можно запускать творческие workflow из аккаунта GenStudio, загружать исходные медиа с устройства, следить за ходом генерации, восстанавливать результаты и сохранять готовые материалы.\n\nСоздавайте изображения персонажей, задавайте движение между ключевыми кадрами, превращайте абзацы истории в визуальные панели, оживляйте статичное изображение с помощью аудио, заменяйте персонажа в коротком клипе, создавайте черновик 3D-модели для игры или улучшайте небольшую игровую графику.\n\nGenStudio подходит авторам контента, художникам, дизайнерам и небольшим командам, которым нужны практичные AI-инструменты с понятным управлением workflow."
     },
     {
+      "language": "tr-TR",
+      "publish": true,
+      "title": "GenStudio AI Creator",
+      "shortDescription": "Görsel, video, hikaye sahneleri ve oyun varlıkları için AI araçları.",
+      "fullDescription": "GenStudio; görseller, kısa videolar, hikaye sahneleri, lip sync klipleri, karakter değiştirme ve oyun varlıkları için odaklı bir AI üretim çalışma alanıdır.\n\nAndroid uygulamasıyla GenStudio hesabınızdan yaratıcı workflow'lar başlatabilir, cihazınızdan kaynak medya yükleyebilir, üretim ilerlemesini izleyebilir, sonuçları geri yükleyebilir ve tamamlanan varlıkları kaydedebilirsiniz.\n\nKarakter referans görselleri oluşturun, keyframe'ler arasında hareketi yönetin, hikaye paragraflarını görsel panellere dönüştürün, bir durağan görseli sesle konuşturun, kısa bir klipte karakteri değiştirin, oyun için 3D model taslağı çıkarın veya küçük oyun görsellerini temizleyip büyütün.\n\nGenStudio; içerik üreticileri, sanatçılar, tasarımcılar ve net workflow kontrollerine sahip pratik AI araçlarına ihtiyaç duyan küçük ekipler için tasarlanmıştır."
+    },
+    {
+      "language": "kk",
+      "publish": true,
+      "title": "GenStudio AI Creator",
+      "shortDescription": "Сурет, видео, оқиға сахналары және ойын активтері үшін AI құралдары.",
+      "fullDescription": "GenStudio - суреттер, қысқа видеолар, оқиға көріністері, lip sync клиптері, кейіпкерді ауыстыру және ойын активтері үшін жасалған AI шығармашылық жұмыс кеңістігі.\n\nAndroid қолданбасы арқылы GenStudio аккаунтыңыздан шығармашылық workflow-ларды бастай аласыз, құрылғыңыздан бастапқы медианы жүктейсіз, генерация барысын бақылайсыз, нәтижелерді қайта қалпына келтіресіз және дайын файлдарды сақтайсыз.\n\nКейіпкерге арналған референс суреттер жасаңыз, keyframe арасындағы қозғалысты бағыттаңыз, оқиға абзацтарын визуалды панельдерге айналдырыңыз, статикалық суретті аудио арқылы сөйлетіңіз, қысқа клиптегі кейіпкерді ауыстырыңыз, ойынға арналған 3D модель нобайын жасаңыз немесе шағын ойын графикасын жақсартыңыз.\n\nGenStudio контент жасаушыларға, суретшілерге, дизайнерлерге және нақты workflow басқаруы бар практикалық AI құралдары қажет шағын командаларға арналған."
+    },
+    {
+      "language": "ky-KG",
+      "publish": true,
+      "title": "GenStudio AI Creator",
+      "shortDescription": "Сүрөт, видео, окуя сахналары жана оюн ассеттери үчүн AI куралдары.",
+      "fullDescription": "GenStudio - сүрөттөр, кыска видеолор, окуя көрүнүштөрү, lip sync клиптери, каарманды алмаштыруу жана оюн ассеттери үчүн түзүлгөн AI чыгармачылык иш мейкиндиги.\n\nAndroid колдонмосу аркылуу GenStudio аккаунтуңуздан чыгармачылык workflow'лорду баштап, түзмөгүңүздөн баштапкы медианы жүктөп, генерациянын жүрүшүн көзөмөлдөп, натыйжаларды калыбына келтирип жана даяр файлдарды сактай аласыз.\n\nКаарман үчүн референс сүрөттөрдү түзүңүз, keyframe'дердин ортосундагы кыймылды багыттаңыз, окуя абзацтарын визуалдык панелдерге айлантыңыз, статикалык сүрөттү аудио менен сүйлөтүңүз, кыска клиптеги каарманды алмаштырыңыз, оюн үчүн 3D модель эскизин жасаңыз же чакан оюн графикасын жакшыртыңыз.\n\nGenStudio контент жаратуучуларга, сүрөтчүлөргө, дизайнерлерге жана так workflow башкаруусу бар практикалык AI куралдары керек болгон чакан командаларга арналган."
+    },
+    {
       "language": "uz-UZ",
       "publish": false,
       "unsupportedReason": "Google Play rejected uz-UZ and uz as unsupported listing languages on 2026-08-04.",
