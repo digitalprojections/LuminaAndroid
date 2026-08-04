@@ -3,9 +3,9 @@
     <string name="independent_service_title">Service Model</string>
     <string name="independent_service_body">GenStudio is an independent creative service. Image, video, and 3D generation use metered computing resources, storage, and maintenance. Credits are required to run generation tasks; signing in does not start a purchase or subscription.</string>
     <string name="independent_service_checkbox">I acknowledge.</string>
-    <string name="terms_acceptance_checkbox">I agree to the Terms of Use.</string>
+    <string name="terms_acceptance_checkbox">I agree to the Terms of Service.</string>
     <string name="privacy_acceptance_checkbox">I have read the Privacy Policy.</string>
-    <string name="privacy_policy_summary">GenStudio uses account, upload, prompt, device, billing, ad reward, and task data only to provide, secure, support, bill, and improve the creative service.\n\nUploaded files and generated outputs are temporary. We do not sell personal information, and we do not train models on private uploads or outputs unless we ask for separate permission.</string>
-    <string name="terms_of_use_summary">By using GenStudio, you agree to follow the current Terms of Service, AI acceptable-use rules, payment terms, and privacy choices. Do not create illegal, harmful, deceptive, harassing, non-consensual sexual, child exploitative, scam, or rights-violating content.</string>
+    <string name="privacy_policy_summary">The same GenStudio Privacy Policy applies on web and Android. The full hosted policy controls how account, upload, prompt, device, billing, ad reward, and task data are collected, used, retained, and deleted.</string>
+    <string name="terms_of_service_summary">The same GenStudio Terms of Service apply on web and Android. The full hosted terms control payment terms, AI acceptable-use rules, content responsibility, service availability, and account enforcement.</string>
 </resources>
 

@@ -128,6 +128,10 @@ data class OneImageAccountProfile(
 object OneImageApi {
     const val CURRENT_TERMS_VERSION = "2026-08-04"
     const val CURRENT_PRIVACY_VERSION = "2026-08-04"
+    const val PRIVACY_POLICY_URL = "https://genstudio.web.app/privacy_policy.html"
+    const val TERMS_OF_SERVICE_URL = "https://genstudio.web.app/terms_of_service.html"
+    const val ACCOUNT_DELETION_URL = "https://genstudio.web.app/account_deletion.html"
+    const val COMMERCIAL_DISCLOSURE_URL = "https://genstudio.web.app/commercial_disclosure.html"
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)

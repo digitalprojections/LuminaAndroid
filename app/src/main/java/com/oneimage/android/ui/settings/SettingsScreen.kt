@@ -151,7 +151,7 @@ fun SettingsScreen(
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
-                            "Please accept the current Privacy Policy and Terms of Use before starting generation tasks.",
+                            "Please accept the current Privacy Policy and Terms of Service before starting generation tasks.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 13.sp,
                             lineHeight = 18.sp

@@ -13,6 +13,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.oneimage.android.R
+import com.oneimage.android.api.OneImageApi
 import com.oneimage.android.ui.shared.IndependentServiceNotice
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,6 +42,12 @@ fun LegalScreen(onBack: () -> Unit) {
             item {
                 IndependentServiceNotice()
                 Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    text = "GenStudio uses one shared legal document set for web and Android. The hosted pages below are the authoritative agreements for this app.",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(24.dp))
             }
             item {
                 Text(text = "Privacy Policy", fontWeight = FontWeight.Bold, fontSize = 20.sp)
@@ -52,7 +59,7 @@ fun LegalScreen(onBack: () -> Unit) {
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedButton(
-                    onClick = { uriHandler.openUri("https://genstudio.web.app/privacy_policy.html") },
+                    onClick = { uriHandler.openUri(OneImageApi.PRIVACY_POLICY_URL) },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Open full Privacy Policy")
@@ -60,16 +67,16 @@ fun LegalScreen(onBack: () -> Unit) {
                 Spacer(modifier = Modifier.height(24.dp))
             }
             item {
-                Text(text = "Terms of Use", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Text(text = "Terms of Service", fontWeight = FontWeight.Bold, fontSize = 20.sp)
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = stringResource(R.string.terms_of_use_summary),
+                    text = stringResource(R.string.terms_of_service_summary),
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedButton(
-                    onClick = { uriHandler.openUri("https://genstudio.web.app/terms_of_service.html") },
+                    onClick = { uriHandler.openUri(OneImageApi.TERMS_OF_SERVICE_URL) },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Open full Terms of Service")
@@ -86,7 +93,7 @@ fun LegalScreen(onBack: () -> Unit) {
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedButton(
-                    onClick = { uriHandler.openUri("https://genstudio.web.app/account_deletion.html") },
+                    onClick = { uriHandler.openUri(OneImageApi.ACCOUNT_DELETION_URL) },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Open deletion instructions")
@@ -103,7 +110,7 @@ fun LegalScreen(onBack: () -> Unit) {
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedButton(
-                    onClick = { uriHandler.openUri("https://genstudio.web.app/commercial_disclosure.html") },
+                    onClick = { uriHandler.openUri(OneImageApi.COMMERCIAL_DISCLOSURE_URL) },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Open commercial disclosure")

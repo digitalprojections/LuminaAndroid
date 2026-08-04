@@ -215,7 +215,7 @@ fun LoginScreen(
                         .background(MaterialTheme.colorScheme.outline, CircleShape)
                 )
                 Text(
-                    "Terms of Use",
+                    "Terms of Service",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.clickable(onClick = onLegalClick)
