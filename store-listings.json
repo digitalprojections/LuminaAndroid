@@ -1,0 +1,35 @@
+{
+  "packageName": "com.oneimage.android",
+  "listings": [
+    {
+      "language": "en-US",
+      "publish": true,
+      "title": "GenStudio AI Creator",
+      "shortDescription": "AI tools for images, videos, story scenes, and game assets.",
+      "fullDescription": "GenStudio is a focused AI creation workspace for images, short videos, story visuals, lip sync clips, character replacement, and game assets.\n\nUse the Android app to start creative workflows from your GenStudio account, upload source media from your device, follow generation progress, restore results, and save finished assets.\n\nCreate character reference images, direct motion between keyframes, turn story paragraphs into visual panels, make a still image speak with audio, replace a character in a short clip, draft a 3D game mesh, or clean up small game art.\n\nGenStudio is built for creators, artists, designers, and small teams who need practical AI tools with clear workflow controls."
+    },
+    {
+      "language": "ru-RU",
+      "publish": true,
+      "title": "GenStudio AI Creator",
+      "shortDescription": "AI-инструменты для изображений, видео, историй и игровых ассетов.",
+      "fullDescription": "GenStudio - это рабочая среда для AI-творчества: изображения, короткие видео, визуальные сцены для историй, lip sync клипы, замена персонажей и игровые ассеты.\n\nВ Android-приложении можно запускать творческие workflow из аккаунта GenStudio, загружать исходные медиа с устройства, следить за ходом генерации, восстанавливать результаты и сохранять готовые материалы.\n\nСоздавайте изображения персонажей, задавайте движение между ключевыми кадрами, превращайте абзацы истории в визуальные панели, оживляйте статичное изображение с помощью аудио, заменяйте персонажа в коротком клипе, создавайте черновик 3D-модели для игры или улучшайте небольшую игровую графику.\n\nGenStudio подходит авторам контента, художникам, дизайнерам и небольшим командам, которым нужны практичные AI-инструменты с понятным управлением workflow."
+    },
+    {
+      "language": "uz-UZ",
+      "publish": false,
+      "unsupportedReason": "Google Play rejected uz-UZ and uz as unsupported listing languages on 2026-08-04.",
+      "title": "GenStudio AI Creator",
+      "shortDescription": "Rasm, video, hikoya sahnalari va o'yin aktivlari uchun AI vositalar.",
+      "fullDescription": "GenStudio - rasm, qisqa video, hikoya vizuallari, lip sync kliplar, personajni almashtirish va o'yin aktivlari uchun mo'ljallangan AI ijodiy ish maydoni.\n\nAndroid ilovasi orqali GenStudio akkauntingizdan workflowlarni boshlashingiz, qurilmangizdan manba media yuklashingiz, generatsiya jarayonini kuzatishingiz, natijalarni tiklashingiz va tayyor fayllarni saqlashingiz mumkin.\n\nPersonaj referens rasmlarini yarating, keyframe orasidagi harakatni boshqaring, hikoya paragraflarini vizual panellarga aylantiring, audio yordamida statik rasmni gapirtiring, qisqa klipdagi personajni almashtiring, o'yin uchun 3D model qoralamasini yarating yoki kichik o'yin grafikalarini yaxshilang.\n\nGenStudio kontent yaratuvchilar, rassomlar, dizaynerlar va kichik jamoalar uchun amaliy AI vositalarini aniq workflow boshqaruvi bilan taqdim etadi."
+    },
+    {
+      "language": "tg-TJ",
+      "publish": false,
+      "unsupportedReason": "Google Play rejected tg-TJ and tg as unsupported listing languages on 2026-08-04.",
+      "title": "GenStudio AI Creator",
+      "shortDescription": "Воситаҳои AI барои тасвир, видео, саҳнаҳои ҳикоя ва ассетҳои бозӣ.",
+      "fullDescription": "GenStudio як муҳити кории эҷодӣ бо AI барои тасвирҳо, видеоҳои кӯтоҳ, саҳнаҳои ҳикоя, клипҳои lip sync, иваз кардани персонаж ва ассетҳои бозӣ мебошад.\n\nДар барномаи Android шумо метавонед workflow-ҳоро аз ҳисоби GenStudio оғоз кунед, медиаи ибтидоиро аз дастгоҳ бор кунед, раванди генератсияро пайгирӣ намоед, натиҷаҳоро барқарор кунед ва файлҳои тайёрро нигоҳ доред.\n\nТасвирҳои референсии персонаж созед, ҳаракатро байни keyframe-ҳо роҳнамоӣ кунед, параграфҳои ҳикояро ба панелҳои визуалӣ табдил диҳед, тасвири статикро бо аудио ба гуфтор оред, персонажро дар клипи кӯтоҳ иваз кунед, модели 3D-и бозиро ҳамчун тарҳ созед ё графикаи хурди бозиро беҳтар намоед.\n\nGenStudio барои эҷодкорон, рассомон, дизайнерҳо ва дастаҳои хурд сохта шудааст, ки ба воситаҳои амалии AI ва идоракунии равшани workflow ниёз доранд."
+    }
+  ]
+}
