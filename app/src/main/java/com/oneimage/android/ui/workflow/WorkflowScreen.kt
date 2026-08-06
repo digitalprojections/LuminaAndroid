@@ -104,8 +104,11 @@ import com.oneimage.android.api.OneImageQueueStatus
 import com.oneimage.android.api.OneImageTask
 import com.oneimage.android.api.OneImageTaskResult
 import com.oneimage.android.api.OneImageWebRtcClient
+import com.oneimage.android.api.DEFAULT_IMAGE_TRANSFER_MAX_LONG_EDGE
 import com.oneimage.android.api.WorkflowPricingConfig
 import com.oneimage.android.api.WorkflowPricingRepository
+import com.oneimage.android.api.characterReplacementCredits
+import com.oneimage.android.api.oneMotionCredits
 import com.oneimage.android.api.prepareImageTransfer
 import com.oneimage.android.ui.shared.CancelTaskConfirmationDialog
 import com.oneimage.android.ui.shared.ResultVideoPreview
@@ -338,10 +341,26 @@ fun WorkflowScreen(
                             textValues["duration"] = formatTenths(current.coerceIn(0.1f, maxDuration))
                         }
                     } else if (slot.mime.startsWith("image")) {
-                        val prepared = prepareImageTransfer(context, uri, slot.id)
+                        val prepared = prepareImageTransfer(
+                            context = context,
+                            sourceUri = uri,
+                            prefix = slot.id,
+                            maxLongEdge = if (spec.kind == WorkflowKind.SingleI2V) {
+                                SingleI2VConfig.MAX_SOURCE_LONG_EDGE
+                            } else {
+                                DEFAULT_IMAGE_TRANSFER_MAX_LONG_EDGE
+                            }
+                        )
                         selectedUris[slot.id] = prepared.uri
                         fileInfos[slot.id] = prepared.fileInfo
                         imageDimensions[slot.id] = prepared.width to prepared.height
+                        if (spec.kind == WorkflowKind.SingleI2V && slot.id == "singleI2VImage") {
+                            textValues["duration"] = SingleI2VConfig.clampDurationForInput(
+                                textValues["duration"],
+                                prepared.width to prepared.height,
+                                SingleI2VConfig.clampFrameRate(textValues["frameRate"])
+                            ).toString()
+                        }
                     } else {
                         selectedUris[slot.id] = uri
                         fileInfos[slot.id] = OneImageApi.getFileInfo(context.contentResolver, uri)
@@ -441,9 +460,11 @@ fun WorkflowScreen(
     }
     val storyParagraphs = if (spec.kind == WorkflowKind.StoryImages) storyParagraphs(textValues["storyPrompt"].orEmpty()) else emptyList()
     val storyPromptLimitExceeded = storyParagraphs.any { it.length > STORY_PARAGRAPH_LIMIT }
+    val singleI2VInputSafe = spec.kind != WorkflowKind.SingleI2V ||
+        SingleI2VConfig.preparedImageWithinLimit(imageDimensions["singleI2VImage"])
     val estimatedCreditsForBalance = workflowEstimatedCreditsValue(spec.kind, workflowPricing, textValues, keyframeCount)
     val hasEnoughCredits = profile?.hasEnoughCredits(estimatedCreditsForBalance) == true
-    val ready = activeFileSlots.all { fileInfos[it.id] != null } && when (spec.kind) {
+    val ready = activeFileSlots.all { fileInfos[it.id] != null } && singleI2VInputSafe && when (spec.kind) {
         WorkflowKind.Keyframes -> keyframeCount >= 2
         WorkflowKind.StoryImages -> storyParagraphs.isNotEmpty() && !storyPromptLimitExceeded
         else -> spec.textSlots.all { slot ->
@@ -685,7 +706,7 @@ fun WorkflowScreen(
                             Spacer(modifier = Modifier.width(10.dp))
                             Text(status, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.Black)
                         } else {
-                            Text("${spec.action} · ${workflowEstimatedCreditsLabel(spec.kind, workflowPricing)}", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Black)
+                            Text("${spec.action} · $estimatedCreditsForBalance credits", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Black)
                             Spacer(modifier = Modifier.width(8.dp))
                             Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.Black)
                         }
@@ -1020,7 +1041,9 @@ private fun SingleI2VControls(
     imageDimensions: Pair<Int, Int>?,
     enabled: Boolean
 ) {
-    val duration = SingleI2VConfig.clampDuration(values["duration"])
+    val frameRate = SingleI2VConfig.clampFrameRate(values["frameRate"])
+    val maxDuration = SingleI2VConfig.maxDurationForInput(imageDimensions, frameRate)
+    val duration = SingleI2VConfig.clampDurationForInput(values["duration"], imageDimensions, frameRate)
     val resolutionMode = values["resolutionMode"].takeIf { it == "selector" } ?: "input"
     val aspectRatio = SingleI2VConfig.normalizeAspectRatio(values["aspectRatio"])
 
@@ -1077,7 +1100,7 @@ private fun SingleI2VControls(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text("Video Length", fontWeight = FontWeight.SemiBold)
-                Text("3 to 10 seconds", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("3 to $maxDuration seconds", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Surface(shape = RoundedCornerShape(999.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)) {
                 Text(
@@ -1088,17 +1111,21 @@ private fun SingleI2VControls(
                 )
             }
         }
-        Slider(
-            value = duration.toFloat(),
-            onValueChange = { values["duration"] = SingleI2VConfig.durationInputValue(it) },
-            valueRange = SingleI2VConfig.MIN_DURATION_SECONDS.toFloat()..SingleI2VConfig.MAX_DURATION_SECONDS.toFloat(),
-            steps = SingleI2VConfig.MAX_DURATION_SECONDS - SingleI2VConfig.MIN_DURATION_SECONDS - 1,
-            enabled = enabled
-        )
+        if (maxDuration > SingleI2VConfig.MIN_DURATION_SECONDS) {
+            Slider(
+                value = duration.toFloat(),
+                onValueChange = { values["duration"] = SingleI2VConfig.durationInputValue(it, imageDimensions, frameRate) },
+                valueRange = SingleI2VConfig.MIN_DURATION_SECONDS.toFloat()..maxDuration.toFloat(),
+                steps = (maxDuration - SingleI2VConfig.MIN_DURATION_SECONDS - 1).coerceAtLeast(0),
+                enabled = enabled
+            )
+        }
 
         OutlinedTextField(
-            value = values["duration"] ?: duration.toString(),
-            onValueChange = { value -> values["duration"] = value.filter { it.isDigit() }.take(2) },
+            value = duration.toString(),
+            onValueChange = { value ->
+                values["duration"] = SingleI2VConfig.clampDurationForInput(value.filter { it.isDigit() }.take(2), imageDimensions, frameRate).toString()
+            },
             enabled = enabled,
             label = { Text("Seconds") },
             singleLine = true,
@@ -1106,8 +1133,12 @@ private fun SingleI2VControls(
         )
 
         OutlinedTextField(
-            value = values["frameRate"] ?: SingleI2VConfig.DEFAULT_FRAME_RATE.toString(),
-            onValueChange = { value -> values["frameRate"] = value.filter { it.isDigit() }.take(2) },
+            value = frameRate.toString(),
+            onValueChange = { value ->
+                val nextFrameRate = SingleI2VConfig.clampFrameRate(value.filter { it.isDigit() }.take(2))
+                values["frameRate"] = nextFrameRate.toString()
+                values["duration"] = SingleI2VConfig.clampDurationForInput(values["duration"], imageDimensions, nextFrameRate).toString()
+            },
             enabled = enabled,
             label = { Text("FPS") },
             singleLine = true,
@@ -1261,13 +1292,17 @@ private suspend fun submitWorkflow(
 ): String = when (spec.kind) {
     WorkflowKind.SingleI2V -> {
         val dimensions = imageDimensions["singleI2VImage"] ?: (0 to 0)
+        val frameRate = SingleI2VConfig.clampFrameRate(text["frameRate"])
+        require(SingleI2VConfig.preparedImageWithinLimit(dimensions)) {
+            "Prepared image is too large for Single I2V. Choose the image again so Android can resize it first."
+        }
         OneImageApi.submitSingleI2VWorkflow(
             baseUrl = baseUrl,
             clientId = clientId,
             prompt = text["prompt"].orEmpty(),
             imageFileInfo = files.getValue("singleI2VImage"),
-            duration = SingleI2VConfig.clampDuration(text["duration"]),
-            frameRate = SingleI2VConfig.clampFrameRate(text["frameRate"]),
+            duration = SingleI2VConfig.clampDurationForInput(text["duration"], dimensions, frameRate),
+            frameRate = frameRate,
             resolutionMode = text["resolutionMode"].takeIf { it == "selector" } ?: "input",
             aspectRatio = SingleI2VConfig.normalizeAspectRatio(text["aspectRatio"]),
             inputWidth = dimensions.first,
@@ -1317,15 +1352,6 @@ private fun formatTenths(value: Float): String = String.format(Locale.US, "%.1f"
 
 private fun formatSeconds(value: Float): String = "${formatTenths(value)}s"
 
-private fun workflowEstimatedCreditsLabel(kind: WorkflowKind, pricing: WorkflowPricingConfig): String = when (kind) {
-    WorkflowKind.SingleI2V -> "${pricing.singleI2VFlat} credits"
-    WorkflowKind.CharacterReplacement -> "${pricing.characterReplacementPerSecond} credits/sec"
-    WorkflowKind.StoryImages -> "${pricing.qwenImageEditFlat} credits"
-    WorkflowKind.RefRestyle -> "${pricing.refRestyleFlat} credits"
-    WorkflowKind.GameAssetUpscaler -> "${pricing.gameAssetUpscalerFlat} credits"
-    WorkflowKind.Keyframes -> "from ${pricing.oneMotionMinimum} credits"
-}
-
 private fun workflowEstimatedCreditsValue(
     kind: WorkflowKind,
     pricing: WorkflowPricingConfig,
@@ -1333,14 +1359,15 @@ private fun workflowEstimatedCreditsValue(
     keyframeCount: Int
 ): Int = when (kind) {
     WorkflowKind.SingleI2V -> pricing.singleI2VFlat
-    WorkflowKind.CharacterReplacement -> {
-        val duration = textValues["duration"]?.toFloatOrNull() ?: 1f
-        (kotlin.math.ceil(duration.coerceAtLeast(0.1f).toDouble()).toInt().coerceAtLeast(1) * pricing.characterReplacementPerSecond)
-    }
+    WorkflowKind.CharacterReplacement -> pricing.characterReplacementCredits(textValues["duration"]?.toFloatOrNull() ?: 1f)
     WorkflowKind.StoryImages -> pricing.qwenImageEditFlat
     WorkflowKind.RefRestyle -> pricing.refRestyleFlat
     WorkflowKind.GameAssetUpscaler -> pricing.gameAssetUpscalerFlat
-    WorkflowKind.Keyframes -> pricing.oneMotionMinimum + (keyframeCount - 2).coerceAtLeast(0) * pricing.oneMotionExtraKeyframe
+    WorkflowKind.Keyframes -> pricing.oneMotionCredits(
+        (0 until (keyframeCount - 1).coerceAtLeast(0)).map { index ->
+            textValues[keyframeDurationId(index)]?.toIntOrNull() ?: 25
+        }
+    )
 }
 
 private fun workflowEngineStatusKey(kind: WorkflowKind): String = when (kind) {

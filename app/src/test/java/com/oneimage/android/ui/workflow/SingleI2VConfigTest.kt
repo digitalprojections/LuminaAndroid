@@ -14,6 +14,29 @@ class SingleI2VConfigTest {
     }
 
     @Test
+    fun maxDurationScalesWithPreparedImageSizeAndFrameRate() {
+        assertEquals(10, SingleI2VConfig.maxDurationForInput(512 to 512, 16))
+        assertEquals(5, SingleI2VConfig.maxDurationForInput(576 to 768, 16))
+        assertEquals(4, SingleI2VConfig.maxDurationForInput(768 to 768, 16))
+        assertEquals(3, SingleI2VConfig.maxDurationForInput(576 to 768, 30))
+    }
+
+    @Test
+    fun durationIsClampedToPreparedImageBudget() {
+        assertEquals(5, SingleI2VConfig.clampDurationForInput("10", 576 to 768, 16))
+        assertEquals(3, SingleI2VConfig.clampDurationForInput("1", 576 to 768, 16))
+        assertEquals("5", SingleI2VConfig.durationInputValue(10f, 576 to 768, 16))
+    }
+
+    @Test
+    fun preparedImageLimitMatchesSingleI2VTransferCap() {
+        assertEquals(true, SingleI2VConfig.preparedImageWithinLimit(576 to 768))
+        assertEquals(true, SingleI2VConfig.preparedImageWithinLimit(768 to 768))
+        assertEquals(false, SingleI2VConfig.preparedImageWithinLimit(768 to 1024))
+        assertEquals(false, SingleI2VConfig.preparedImageWithinLimit(null))
+    }
+
+    @Test
     fun sliderDurationCommitsNearestWholeSecond() {
         assertEquals("3", SingleI2VConfig.durationInputValue(3.1f))
         assertEquals("6", SingleI2VConfig.durationInputValue(5.6f))

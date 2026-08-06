@@ -7,12 +7,14 @@ import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.math.ceil
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 data class WorkflowPricingConfig(
     val oneImageLightning: Int = 30,
     val oneImageQuality: Int = 50,
     val oneVideoPerSecond: Int = 4,
+    val oneVideoMinimum: Int = 24,
     val singleI2VFlat: Int = 36,
     val oneMotionPerSecond: Int = 6,
     val oneMotionMinimum: Int = 60,
@@ -32,6 +34,7 @@ data class WorkflowPricingConfig(
                 oneImageLightning = number(data, "oneImageLightning", defaults.oneImageLightning),
                 oneImageQuality = number(data, "oneImageQuality", defaults.oneImageQuality),
                 oneVideoPerSecond = number(data, "oneVideoPerSecond", defaults.oneVideoPerSecond),
+                oneVideoMinimum = number(data, "oneVideoMinimum", defaults.oneVideoMinimum),
                 singleI2VFlat = number(data, "singleI2VFlat", defaults.singleI2VFlat),
                 oneMotionPerSecond = number(data, "oneMotionPerSecond", defaults.oneMotionPerSecond),
                 oneMotionMinimum = number(data, "oneMotionMinimum", defaults.oneMotionMinimum),
@@ -112,10 +115,21 @@ fun WorkflowPricingConfig.oneImageCredits(isLightning: Boolean): Int =
     if (isLightning) oneImageLightning else oneImageQuality
 
 fun WorkflowPricingConfig.oneVideoCredits(durationSeconds: Int): Int =
-    durationSeconds.coerceAtLeast(1) * oneVideoPerSecond
+    max(oneVideoMinimum, durationSeconds.coerceAtLeast(1) * oneVideoPerSecond)
 
 fun WorkflowPricingConfig.lipSyncCredits(durationSeconds: Float): Int =
     ceil(durationSeconds.coerceAtLeast(0.1f).toDouble()).toInt().coerceAtLeast(1) * oneLipSyncPerSecond
 
 fun WorkflowPricingConfig.characterReplacementCredits(durationSeconds: Float): Int =
     ceil(durationSeconds.coerceAtLeast(0.1f).toDouble()).toInt().coerceAtLeast(1) * characterReplacementPerSecond
+
+fun WorkflowPricingConfig.oneMotionCredits(transitionFrames: List<Int>): Int {
+    if (transitionFrames.isEmpty()) return 0
+
+    val keyframeCount = transitionFrames.size + 1
+    val totalFrames = transitionFrames.sumOf { it.coerceIn(1, 250) }
+    val seconds = totalFrames / 25.0
+    val durationCredits = ceil(seconds * oneMotionPerSecond).toInt()
+    val extraKeyframeCredits = (keyframeCount - 2).coerceAtLeast(0) * oneMotionExtraKeyframe
+    return max(oneMotionMinimum, durationCredits + extraKeyframeCredits)
+}

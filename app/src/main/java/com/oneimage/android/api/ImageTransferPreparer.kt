@@ -12,7 +12,7 @@ import java.io.File
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-private const val DEFAULT_MAX_LONG_EDGE = 1080
+const val DEFAULT_IMAGE_TRANSFER_MAX_LONG_EDGE = 1080
 
 data class PreparedImageTransfer(
     val uri: Uri,
@@ -25,7 +25,7 @@ suspend fun prepareImageTransfer(
     context: Context,
     sourceUri: Uri,
     prefix: String,
-    maxLongEdge: Int = DEFAULT_MAX_LONG_EDGE,
+    maxLongEdge: Int = DEFAULT_IMAGE_TRANSFER_MAX_LONG_EDGE,
     quality: Int = 90
 ): PreparedImageTransfer = withContext(Dispatchers.IO) {
     val original = decodeTransferBitmap(context, sourceUri)
