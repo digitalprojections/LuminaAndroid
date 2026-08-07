@@ -103,13 +103,17 @@ try {
   $uploadUri = "$uploadBaseUrl/edits/$editId/apks/$VersionCode/deobfuscationFiles/proguard?uploadType=media"
   $upload = curl.exe -sS -X POST $uploadUri `
     -H "Authorization: Bearer $token" `
-    -H "Content-Type: text/plain" `
+    -H "Content-Type: application/octet-stream" `
     --data-binary "@$resolvedMapping"
   if ($LASTEXITCODE -ne 0) {
     throw "curl failed while uploading deobfuscation file."
   }
 
   $uploadResult = $upload | ConvertFrom-Json
+  if ($uploadResult.error) {
+    throw "Deobfuscation upload failed. Response: $upload"
+  }
+
   $symbolType = $uploadResult.deobfuscationFile.symbolType
   if ([string]::IsNullOrWhiteSpace($symbolType)) {
     throw "Deobfuscation upload did not return a symbol type. Response: $upload"
