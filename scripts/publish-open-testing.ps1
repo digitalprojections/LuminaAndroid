@@ -4,6 +4,8 @@ param(
   [string]$Track = "beta",
   [string]$ReleaseName = "",
   [string]$ReleaseNotes = "Adds Google Play credit purchases and clear paid-credit access messaging.",
+  [string]$MappingPath = "$PSScriptRoot\..\app\build\outputs\mapping\release\mapping.txt",
+  [switch]$UploadDeobfuscationFile,
   [string]$ServiceAccountKeyPath = "",
   [string]$ServiceAccountEmail = "",
   [switch]$ChangesNotSentForReview
@@ -101,6 +103,33 @@ try {
     throw "Bundle upload did not return a versionCode. Response: $upload"
   }
 
+  $deobfuscationFileUploaded = $false
+  $deobfuscationSymbolType = $null
+  $deobfuscationMappingPath = $null
+  if ($UploadDeobfuscationFile) {
+    $resolvedMapping = Resolve-Path -LiteralPath $MappingPath
+    $deobfuscationMappingPath = $resolvedMapping.Path
+    $deobfuscationUri = "$uploadBaseUrl/edits/$editId/apks/$($bundle.versionCode)/deobfuscationFiles/proguard?uploadType=media"
+    $deobfuscationUpload = curl.exe -sS -X POST $deobfuscationUri `
+      -H "Authorization: Bearer $token" `
+      -H "Content-Type: application/octet-stream" `
+      --data-binary "@$resolvedMapping"
+    if ($LASTEXITCODE -ne 0) {
+      throw "curl failed while uploading deobfuscation file."
+    }
+
+    $deobfuscationResult = $deobfuscationUpload | ConvertFrom-Json
+    if ($deobfuscationResult.error) {
+      throw "Deobfuscation upload failed. Response: $deobfuscationUpload"
+    }
+
+    $deobfuscationSymbolType = $deobfuscationResult.deobfuscationFile.symbolType
+    if ([string]::IsNullOrWhiteSpace($deobfuscationSymbolType)) {
+      throw "Deobfuscation upload did not return a symbol type. Response: $deobfuscationUpload"
+    }
+    $deobfuscationFileUploaded = $true
+  }
+
   $trackBody = @{
     track = $Track
     releases = @(
@@ -131,6 +160,9 @@ try {
     versionName = $versionName
     localVersionCode = $versionCode
     uploadedVersionCode = $bundle.versionCode
+    deobfuscationFileUploaded = $deobfuscationFileUploaded
+    deobfuscationSymbolType = $deobfuscationSymbolType
+    deobfuscationMappingPath = $deobfuscationMappingPath
     editId = $editId
     committed = [bool]$commit.id
     bundlePath = $resolvedBundle.Path
