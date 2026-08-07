@@ -92,7 +92,8 @@ android {
   buildTypes {
     release {
       isCrunchPngs = false
-      isMinifyEnabled = false
+      isMinifyEnabled = true
+      isShrinkResources = true
       ndk {
         debugSymbolLevel = "SYMBOL_TABLE"
       }
