@@ -20,8 +20,8 @@ Set production values in `LuminaAndroid/.env`:
 ```properties
 ONEIMAGE_API_BASE_URL=https://genstudio.web.app/
 ONEIMAGE_WEB_APP_URL=https://genstudio.web.app/
-ADMOB_APP_ID=ca-app-pub-your-publisher-id~your-app-id
-ADMOB_REWARDED_AD_UNIT_ID=ca-app-pub-your-publisher-id/your-rewarded-ad-unit-id
+ADMOB_APP_ID=ca-app-pub-3838820812386239~6623010406
+ADMOB_REWARDED_AD_UNIT_ID=ca-app-pub-3838820812386239/8866030362
 ANDROID_STARTER_CREDITS=0
 REWARDED_AD_CREDIT_AMOUNT=10
 ```
@@ -33,7 +33,7 @@ REWARDED_AD_CREDIT_AMOUNT=10
 Set matching backend environment values in `OneImage/.env` or Firebase Functions config/secrets:
 
 ```properties
-ADMOB_REWARDED_AD_UNIT_ID=ca-app-pub-your-publisher-id/your-rewarded-ad-unit-id
+ADMOB_REWARDED_AD_UNIT_ID=ca-app-pub-3838820812386239/8866030362
 REWARDED_AD_CREDIT_AMOUNT=10
 ANDROID_STARTER_CREDITS=0
 ADMOB_REWARDED_SSV_KEYS_URL=https://www.gstatic.com/admob/reward/verifier-keys.json
@@ -48,6 +48,14 @@ In AdMob, configure the rewarded ad unit server-side verification callback URL:
 ```text
 https://genstudio.web.app/api/mobile/admob/rewarded-ssv
 ```
+
+Current production rewarded ad unit:
+
+- AdMob app ID: `ca-app-pub-3838820812386239~6623010406`
+- Ad unit name: `rewards`
+- Ad format: `Rewarded`
+- Ad unit ID: `ca-app-pub-3838820812386239/8866030362`
+- Reward settings: `10 Reward`
 
 The app sets the Firebase UID as the AdMob SSV `user_id`. The backend verifies Google's callback signature, checks the configured ad unit, and grants credits once per AdMob `transaction_id`.
 
