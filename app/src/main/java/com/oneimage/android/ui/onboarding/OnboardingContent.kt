@@ -22,22 +22,22 @@ object OnboardingContent {
         ),
         OnboardingPage(
             id = "speed",
-            eyebrow = "Move fast",
-            title = "Fast once your task is running",
-            description = "There can be a queue when the studio is busy. Once your task reaches the server, the workflow itself usually finishes much faster.",
+            eyebrow = "Built to move",
+            title = "Fast where it counts",
+            description = "Once your task starts processing, GenStudio is designed to move quickly from request to result. During busy periods, a short queue may come first.",
             highlights = listOf(
-                "We keep server processing focused so your task can move from queue to result quickly.",
-                "Server time is expensive for our one-person operation. As more creators return, we will add concurrent capacity. Thank you for understanding."
+                "Focused processing keeps your creative loop moving.",
+                "We add capacity as demand grows, so more creators can work without compromising the experience."
             )
         ),
         OnboardingPage(
             id = "studio",
-            eyebrow = "Find your lane",
-            title = "Made for your kind of creating",
-            description = "OneStudio supports many kinds of content creators. Pick the workflows that fit your craft—social content, films, design, product assets, game art, stories, or something entirely your own.",
+            eyebrow = "Made for creators",
+            title = "A studio that fits your craft",
+            description = "Different creators need different tools. Choose what fits your work—social content, design, film, products, game art, storytelling, and more.",
             highlights = listOf(
-                "Use only what you need today, then discover more when your next idea calls for it.",
-                "Images, video, motion, stories, lip sync, 3D, and variations are building blocks—not a checklist."
+                "Start with one workflow. Explore others only when your next idea calls for them.",
+                "Images, video, motion, stories, lip sync, and 3D are options—not a checklist."
             )
         )
     )
