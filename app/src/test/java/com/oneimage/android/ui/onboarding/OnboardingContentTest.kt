@@ -22,7 +22,19 @@ class OnboardingContentTest {
 
         assertEquals("Move fast", page.eyebrow)
         assertTrue(page.title.contains("fast", ignoreCase = true))
-        assertTrue(page.description.contains("GenStudio", ignoreCase = true))
+        assertTrue(page.description.contains("queue", ignoreCase = true))
+        assertTrue(page.description.contains("server", ignoreCase = true))
+        assertTrue(page.highlights.any { it.contains("one-person operation", ignoreCase = true) })
+        assertTrue(page.highlights.any { it.contains("concurrent capacity", ignoreCase = true) })
+    }
+
+    @Test
+    fun studioPageSupportsDifferentCreatorsWithoutSellingEveryWorkflowToEveryone() {
+        val page = OnboardingContent.pages[2]
+
+        assertTrue(page.description.contains("many kinds of content creators", ignoreCase = true))
+        assertTrue(page.highlights.any { it.contains("only what you need", ignoreCase = true) })
+        assertTrue(page.highlights.any { it.contains("not a checklist", ignoreCase = true) })
     }
 
     @Test

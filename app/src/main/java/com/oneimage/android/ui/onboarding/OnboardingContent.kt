@@ -23,21 +23,21 @@ object OnboardingContent {
         OnboardingPage(
             id = "speed",
             eyebrow = "Move fast",
-            title = "From idea to output, fast",
-            description = "GenStudio workflows are built for fast creative loops: upload, describe, generate, and keep iterating.",
+            title = "Fast once your task is running",
+            description = "There can be a queue when the studio is busy. Once your task reaches the server, the workflow itself usually finishes much faster.",
             highlights = listOf(
-                "Short path from a thought to a result.",
-                "Keep experimenting without leaving your studio."
+                "We keep server processing focused so your task can move from queue to result quickly.",
+                "Server time is expensive for our one-person operation. As more creators return, we will add concurrent capacity. Thank you for understanding."
             )
         ),
         OnboardingPage(
             id = "studio",
-            eyebrow = "Make more",
-            title = "One studio for every direction",
-            description = "Turn a single idea into images, videos, motion, stories, lip sync, 3D assets, and polished variations.",
+            eyebrow = "Find your lane",
+            title = "Made for your kind of creating",
+            description = "OneStudio supports many kinds of content creators. Pick the workflows that fit your craft—social content, films, design, product assets, game art, stories, or something entirely your own.",
             highlights = listOf(
-                "Create, refine, and revisit your work in one place.",
-                "Your next experiment is always one tap away."
+                "Use only what you need today, then discover more when your next idea calls for it.",
+                "Images, video, motion, stories, lip sync, 3D, and variations are building blocks—not a checklist."
             )
         )
     )
