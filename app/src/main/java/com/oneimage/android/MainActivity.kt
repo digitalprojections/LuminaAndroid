@@ -43,6 +43,8 @@ import com.oneimage.android.ui.imagegen.ImageGenScreen
 import com.oneimage.android.ui.legal.LegalScreen
 import com.oneimage.android.ui.lipsync.LipSyncScreen
 import com.oneimage.android.ui.meshmodel.MeshModelScreen
+import com.oneimage.android.ui.onboarding.OnboardingPreferences
+import com.oneimage.android.ui.onboarding.OnboardingScreen
 import com.oneimage.android.ui.settings.SettingsScreen
 import com.oneimage.android.ui.shared.AppNotificationHost
 import com.oneimage.android.ui.shared.SharedHistoryScreen
@@ -130,11 +132,30 @@ class MainActivity : ComponentActivity() {
                             composable<Screen.Login> {
                                 LoginScreen(
                                     onLoginSuccess = {
-                                        navController.navigate(Screen.Dashboard) {
+                                        val accountId = auth.currentUser?.uid.orEmpty()
+                                        val destination = if (OnboardingPreferences.isComplete(context, accountId)) {
+                                            Screen.Dashboard
+                                        } else {
+                                            Screen.Onboarding
+                                        }
+                                        navController.navigate(destination) {
                                             popUpTo(Screen.Login) { inclusive = true }
                                         }
                                     },
                                     onLegalClick = { navController.navigate(Screen.Legal) }
+                                )
+                            }
+                            composable<Screen.Onboarding> {
+                                OnboardingScreen(
+                                    onComplete = {
+                                        auth.currentUser?.uid?.let { accountId ->
+                                            OnboardingPreferences.markComplete(context, accountId)
+                                        }
+                                        navController.navigate(Screen.Dashboard) {
+                                            popUpTo(Screen.Onboarding) { inclusive = true }
+                                            launchSingleTop = true
+                                        }
+                                    }
                                 )
                             }
                             composable<Screen.Dashboard> { DashboardScreen(navController) }

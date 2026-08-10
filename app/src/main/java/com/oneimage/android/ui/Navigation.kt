@@ -7,6 +7,9 @@ sealed class Screen {
     object Login : Screen()
 
     @Serializable
+    object Onboarding : Screen()
+
+    @Serializable
     object Dashboard : Screen()
 
     @Serializable
