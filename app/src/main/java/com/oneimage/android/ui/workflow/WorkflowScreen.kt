@@ -193,12 +193,12 @@ object WorkflowSpecs {
         subtitle = "Change a character in a short clip",
         action = "Create Clip",
         fileSlots = listOf(
-            WorkflowFileSlot("characterVideo", "Source video", "video/*", "Use a short video up to 15 seconds."),
+            WorkflowFileSlot("characterVideo", "Source video", "video/*", "Use a short video up to 3 seconds."),
             WorkflowFileSlot("characterImage", "Reference image", "image/*", "Choose the identity or character reference.")
         ),
         textSlots = listOf(
             WorkflowTextSlot("prompt", "Prompt", "Describe how the replacement should preserve motion and scene.", "Replace the person in the video with the person from the reference image while preserving the original motion, pose, timing, and scene.", 3),
-            WorkflowTextSlot("duration", "Duration seconds", "5", "5")
+            WorkflowTextSlot("duration", "Duration seconds", "3", "3")
         )
     )
 
@@ -336,8 +336,15 @@ fun WorkflowScreen(
                         fileInfos[slot.id] = OneImageApi.getFileInfo(context.contentResolver, uri)
                         durations[slot.id] = readMediaDurationSeconds(context, uri)
                         if (spec.kind == WorkflowKind.CharacterReplacement && slot.id == "characterVideo") {
-                            val maxDuration = durations[slot.id]?.coerceAtMost(15f)?.coerceAtLeast(0.1f) ?: 5f
-                            val current = textValues["duration"]?.toFloatOrNull() ?: maxDuration.coerceAtMost(5f)
+                            if (!CharacterReplacementConfig.inputDurationAllowed(durations[slot.id])) {
+                                selectedUris.remove(slot.id)
+                                fileInfos.remove(slot.id)
+                                durations.remove(slot.id)
+                                error = "Source video must be 3 seconds or shorter."
+                                return@launch
+                            }
+                            val maxDuration = CharacterReplacementConfig.maxProductionDurationForSource(durations[slot.id])
+                            val current = textValues["duration"]?.toFloatOrNull() ?: maxDuration
                             textValues["duration"] = formatTenths(current.coerceIn(0.1f, maxDuration))
                         }
                     } else if (slot.mime.startsWith("image")) {
@@ -1154,9 +1161,9 @@ private fun CharacterDurationControl(
     enabled: Boolean,
     onValueChange: (String) -> Unit
 ) {
-    val source = sourceDuration?.takeIf { it > 0f } ?: 15f
-    val maxDuration = source.coerceAtMost(15f).coerceAtLeast(0.1f)
-    val selected = (value.toFloatOrNull() ?: maxDuration.coerceAtMost(5f)).coerceIn(0.1f, maxDuration)
+    val source = sourceDuration?.takeIf { it > 0f } ?: CharacterReplacementConfig.MAX_INPUT_DURATION_SECONDS
+    val maxDuration = CharacterReplacementConfig.maxProductionDurationForSource(sourceDuration)
+    val selected = CharacterReplacementConfig.clampDuration(value, sourceDuration)
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1311,7 +1318,10 @@ private suspend fun submitWorkflow(
     }
     WorkflowKind.CharacterReplacement -> {
         val sourceDuration = durations["characterVideo"]?.takeIf { it > 0f } ?: 1f
-        val duration = text["duration"]?.toFloatOrNull()?.coerceIn(0.1f, sourceDuration.coerceAtMost(15f)) ?: sourceDuration.coerceAtMost(5f)
+        require(CharacterReplacementConfig.inputDurationAllowed(sourceDuration)) {
+            "Source video must be 3 seconds or shorter."
+        }
+        val duration = CharacterReplacementConfig.clampDuration(text["duration"], sourceDuration)
         OneImageApi.submitCharacterReplacementWorkflow(baseUrl, clientId, text["prompt"].orEmpty(), files.getValue("characterVideo"), files.getValue("characterImage"), duration, sourceDuration)
     }
     WorkflowKind.StoryImages -> OneImageApi.submitQwenStoryImagesWorkflow(baseUrl, clientId, files.getValue("qwenImage"), text["storyPrompt"].orEmpty(), text["stylePrompt"].orEmpty(), text["aspectRatio"].orEmpty().ifBlank { STORY_ASPECT_RATIOS.first() })
