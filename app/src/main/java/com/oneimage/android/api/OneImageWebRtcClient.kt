@@ -353,12 +353,24 @@ class OneImageWebRtcClient(
             "file_nack" -> onStatus(json.optString("message", "File transfer was rejected"))
             "task_results_complete" -> onStatus("Restored ${json.optInt("count", 0)} result file(s)")
             "task_results_unavailable" -> onStatus(json.optString("message", "Stored results are unavailable"))
+            "task_results_error" -> onStatus(json.optString("message", "Restore failed"))
         }
     }
 
     private fun sendSelectedFile(requestedFileId: String) {
         val channel = dataChannel ?: return
-        val entry = inputFiles[requestedFileId] ?: inputFiles.values.firstOrNull() ?: return
+        val entry = inputFiles[requestedFileId] ?: inputFiles.values.firstOrNull()
+        if (entry == null) {
+            sendJson(
+                channel,
+                JSONObject()
+                    .put("type", "file_nack")
+                    .put("fileId", requestedFileId)
+                    .put("message", "Selected file is no longer available on this device.")
+                    .put("code", "client_input_unavailable")
+            )
+            return
+        }
         val uri = entry.first
         val info = entry.second
         sendScope.launch {
