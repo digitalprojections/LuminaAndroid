@@ -59,6 +59,8 @@ Current production rewarded ad unit:
 
 The app sets the Firebase UID as the AdMob SSV `user_id`. The backend verifies Google's callback signature, checks the configured ad unit, and grants credits once per AdMob `transaction_id`.
 
+The AdMob console's "Verify URL" tool sends a setup-only callback with placeholder values such as `ad_unit=1234567890` and `transaction_id=123456789`. The backend may return success for that setup check, but it must not grant credits from it. Real credit success still requires a signed reward callback from the app flow with the user's Firebase UID.
+
 ## Verification
 
 Run these checks after changing the ad-credit flow:
