@@ -39,15 +39,15 @@ fun AudioResultPlayer(result: OneImageTaskResult, modifier: Modifier = Modifier)
         player = media
         media.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
         media.setOnPreparedListener { duration = it.duration; ready = true }
-        media.setOnCompletionListener { playing = false; position = duration }
-        media.setOnErrorListener { _, _, _ -> error = "Could not play this audio. Try restoring it again."; playing = false; ready = false; true }
+        media.setOnCompletionListener { playing = false; position = duration; soundEffectPlayback.release(media) }
+        media.setOnErrorListener { _, _, _ -> soundEffectPlayback.release(media); error = "Could not play this audio. Try restoring it again."; playing = false; ready = false; true }
         try { media.setDataSource(context, result.url.toUri()); media.prepareAsync() }
         catch (_: Exception) { error = "Could not open this audio." }
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP && ready) { media.pause(); playing = false }
+            if (event == Lifecycle.Event.ON_STOP && ready) { media.pause(); playing = false; soundEffectPlayback.release(media) }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer); media.release(); player = null }
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer); soundEffectPlayback.release(media); media.release(); player = null }
     }
     LaunchedEffect(playing, result.url) {
         while (playing) { position = player?.currentPosition ?: 0; delay(150) }
@@ -56,8 +56,20 @@ fun AudioResultPlayer(result: OneImageTaskResult, modifier: Modifier = Modifier)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             FilledIconButton(enabled = ready, onClick = {
                 player?.let { media ->
-                    if (playing) media.pause() else { if (position >= duration) media.seekTo(0); media.start() }
-                    playing = !playing
+                    if (playing) {
+                        media.pause()
+                        playing = false
+                        soundEffectPlayback.release(media)
+                    } else {
+                        soundEffectPlayback.start(media) {
+                            media.pause()
+                            position = media.currentPosition
+                            playing = false
+                        }
+                        if (position >= duration) media.seekTo(0)
+                        media.start()
+                        playing = true
+                    }
                 }
             }, modifier = Modifier.testTag("audio-play-${result.filename}")) {
                 Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) "Pause sound effect" else "Play sound effect")

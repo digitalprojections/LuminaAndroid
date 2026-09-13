@@ -666,7 +666,7 @@ private fun SharedHistoryHeroCard(
                     }
                 }
 
-                PreviewDisplayControls(
+                if (task?.type != SharedHistorySpecs.SoundEffects.taskType) PreviewDisplayControls(
                     previewSize = previewSize,
                     previewFrame = previewFrame,
                     previewFit = previewFit,
