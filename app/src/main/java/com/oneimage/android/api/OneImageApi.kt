@@ -401,6 +401,10 @@ object OneImageApi {
         fallbackMessage = "Mesh generation failed to start."
     )
 
+    suspend fun submitSoundEffectsWorkflow(baseUrl: String, clientId: String, config: com.oneimage.android.ui.workflow.SoundEffectsConfig): String =
+        postGeneration(baseUrl = baseUrl, path = "/api/sound-effects/generate",
+            payload = JSONObject(config.payload(clientId)), fallbackMessage = "Sound effects failed to start.")
+
     suspend fun submitGameAssetUpscalerWorkflow(
         baseUrl: String,
         clientId: String,

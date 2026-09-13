@@ -143,10 +143,11 @@ object SharedHistorySpecs {
     val StoryImages = SharedHistorySpec("qwen_image_edit", "qwen_image_edit", "Story Images History", "Keep one story panel loaded while the rest of the run stays compact below.", "No story image history yet.")
     val RefRestyle = SharedHistorySpec("ref_restyle", "ref_restyle", "Ref Restyle History", "Keep one restyled image pinned while earlier tasks stay compact below.", "No ref restyle history yet.")
     val MeshModel = SharedHistorySpec("image_to_3d_mesh", "image_to_3d_mesh", "Game Mesh History", "Highlight one selected mesh job while recent work stays scrollable below.", "No mesh history yet.")
+    val SoundEffects = SharedHistorySpec("sound_effects", "sound_effects", "Sound Effects History", "Listen to and save your generated sounds.", "No sound effects yet.")
     val GameAssetUpscaler = SharedHistorySpec("game_asset_upscaler", "game_asset_upscaler", "Upscaler History", "Hold one upscale result near the top and browse the rest below.", "No upscaler history yet.")
     val Keyframes = SharedHistorySpec("keyframes", "keyframes", "Keyframes History", "Pin one clip in place while keyframe runs stack below.", "No keyframes history yet.")
 
-    private val all = listOf(Image, Video, LipSync, SingleI2V, CharacterReplacement, StoryImages, RefRestyle, MeshModel, GameAssetUpscaler, Keyframes)
+    private val all = listOf(SoundEffects, Image, Video, LipSync, SingleI2V, CharacterReplacement, StoryImages, RefRestyle, MeshModel, GameAssetUpscaler, Keyframes)
 
     fun fromWorkflowKey(key: String): SharedHistorySpec? = all.firstOrNull { it.workflowKey == key }
 }
@@ -601,6 +602,10 @@ private fun SharedHistoryHeroCard(
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = previewFit.contentScale
                             )
+                        }
+
+                        result != null && isPlayableAudioResult(result) -> {
+                            AudioResultPlayer(result, Modifier.align(Alignment.Center).padding(16.dp))
                         }
 
                         result != null && isPlayableVideoResult(result) -> {

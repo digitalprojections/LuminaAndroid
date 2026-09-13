@@ -43,6 +43,9 @@ sealed class Screen {
     object GameAssetUpscaler : Screen()
 
     @Serializable
+    object SoundEffects : Screen()
+
+    @Serializable
     object Keyframes : Screen()
 
     @Serializable

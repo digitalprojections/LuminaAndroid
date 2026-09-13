@@ -222,6 +222,12 @@ class MainActivity : ComponentActivity() {
                                     onCreditsClick = { navController.navigate(Screen.EarnCredits) }
                                 )
                             }
+                            composable<Screen.SoundEffects> {
+                                WorkflowScreen(spec = WorkflowSpecs.SoundEffects,
+                                    onBack = { navController.popBackStack() },
+                                    onHistory = { navController.navigate(Screen.History(SharedHistorySpecs.SoundEffects.workflowKey)) },
+                                    onCreditsClick = { navController.navigate(Screen.EarnCredits) })
+                            }
                             composable<Screen.GameAssetUpscaler> {
                                 WorkflowScreen(
                                     spec = WorkflowSpecs.GameAssetUpscaler,

@@ -101,6 +101,10 @@ android {
       signingConfig = signingConfigs.getByName("release")
     }
     debug {
+      providers.gradleProperty("localApiBaseUrl").orNull?.let { localUrl ->
+        require(localUrl == "http://127.0.0.1:3001/") { "Local testing uses the USB reverse endpoint only." }
+        buildConfigField("String", "ONEIMAGE_API_BASE_URL", "\"$localUrl\"")
+      }
     }
   }
   compileOptions {

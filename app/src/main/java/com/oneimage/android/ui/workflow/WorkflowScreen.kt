@@ -1,5 +1,11 @@
 package com.oneimage.android.ui.workflow
 
+import com.oneimage.android.ui.shared.AudioResultPlayer
+import com.oneimage.android.ui.shared.isPlayableAudioResult
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.snapshots.SnapshotStateMap
+import androidx.compose.runtime.toMutableStateMap
 import android.content.ContentValues
 import android.content.Context
 import android.media.MediaMetadataRetriever
@@ -143,6 +149,7 @@ enum class WorkflowKind {
     StoryImages,
     RefRestyle,
     GameAssetUpscaler,
+    SoundEffects,
     Keyframes
 }
 
@@ -172,6 +179,9 @@ data class WorkflowSpec(
 )
 
 object WorkflowSpecs {
+    val SoundEffects = WorkflowSpec(WorkflowKind.SoundEffects, "sound_effects", "Sound Effects",
+        "Create foley, ambience, and impacts", "Generate Sound Effects", emptyList(), emptyList())
+
     val SingleI2V = WorkflowSpec(
         kind = WorkflowKind.SingleI2V,
         taskType = "single_i2v",
@@ -296,7 +306,7 @@ fun WorkflowScreen(
     val fileInfos = remember(spec.kind) { mutableStateMapOf<String, OneImageFileInfo>() }
     val imageDimensions = remember(spec.kind) { mutableStateMapOf<String, Pair<Int, Int>>() }
     val durations = remember(spec.kind) { mutableStateMapOf<String, Float>() }
-    val textValues = remember(spec.kind) {
+    val legacyTextValues = remember(spec.kind) {
         mutableStateMapOf<String, String>().apply {
             spec.textSlots.forEach { put(it.id, it.defaultValue) }
             if (spec.kind == WorkflowKind.StoryImages) put("aspectRatio", STORY_ASPECT_RATIOS.first())
@@ -308,6 +318,10 @@ fun WorkflowScreen(
             }
         }
     }
+    val soundValues = rememberSaveable(saver = Saver<SnapshotStateMap<String, String>, HashMap<String, String>>(
+        save = { HashMap(it) }, restore = { it.toList().toMutableStateMap() }
+    )) { mutableStateMapOf("prompt" to "", "seconds" to "10", "batchSize" to "1", "cfg" to "5") }
+    val textValues = if (spec.kind == WorkflowKind.SoundEffects) soundValues else legacyTextValues
     var keyframeCount by remember(spec.kind) { mutableIntStateOf(if (spec.kind == WorkflowKind.Keyframes) 2 else 0) }
     var pendingSlot by remember { mutableStateOf<WorkflowFileSlot?>(null) }
     var isBusy by remember { mutableStateOf(false) }
@@ -472,6 +486,7 @@ fun WorkflowScreen(
     val estimatedCreditsForBalance = workflowEstimatedCreditsValue(spec.kind, workflowPricing, textValues, keyframeCount)
     val hasEnoughCredits = profile?.hasEnoughCredits(estimatedCreditsForBalance) == true
     val ready = activeFileSlots.all { fileInfos[it.id] != null } && singleI2VInputSafe && when (spec.kind) {
+        WorkflowKind.SoundEffects -> SoundEffectsConfig.from(textValues).isValid
         WorkflowKind.Keyframes -> keyframeCount >= 2
         WorkflowKind.StoryImages -> storyParagraphs.isNotEmpty() && !storyPromptLimitExceeded
         else -> spec.textSlots.all { slot ->
@@ -510,7 +525,7 @@ fun WorkflowScreen(
                         Text("History")
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.8f)),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = if (spec.kind == WorkflowKind.SoundEffects) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.background.copy(alpha = 0.8f)),
                 windowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)
             )
         }
@@ -545,7 +560,8 @@ fun WorkflowScreen(
                 hasEnoughCredits = hasEnoughCredits
             )
 
-            StatusCard(status = status, task = currentTask, isBusy = isBusy, error = error)
+            if (spec.kind != WorkflowKind.SoundEffects || isBusy || currentTask != null || error != null)
+                StatusCard(status = status, task = currentTask, isBusy = isBusy, error = error)
 
             if (!hasEnoughCredits) {
                 CreditRequiredCard(
@@ -593,6 +609,7 @@ fun WorkflowScreen(
                     )
                 }
 
+                if (spec.kind == WorkflowKind.SoundEffects) SoundEffectsControls(textValues, enabled = !isBusy)
                 spec.textSlots.forEach { slot ->
                     if (spec.kind == WorkflowKind.CharacterReplacement && slot.id == "duration") {
                         CharacterDurationControl(
@@ -1215,12 +1232,12 @@ private fun ResultsCard(
     Card(shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Results", fontWeight = FontWeight.Bold)
-            results.forEach { result ->
+            results.forEachIndexed { index, result ->
                 val renderableImage = isRenderableImageResult(result)
                 val renderableVideo = isPlayableVideoResult(result)
                 Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(result.label.ifBlank { result.filename.ifBlank { "Result" } }, fontWeight = FontWeight.SemiBold)
+                        Text(if (result.filename.endsWith(".mp3", true)) "Sound effect ${index + 1}" else result.label.ifBlank { result.filename.ifBlank { "Result" } }, fontWeight = FontWeight.SemiBold)
                         if (renderableImage) {
                             Box(
                                 modifier = Modifier
@@ -1254,7 +1271,8 @@ private fun ResultsCard(
                                 )
                             }
                         }
-                        Text(result.url, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        if (isPlayableAudioResult(result)) AudioResultPlayer(result)
+                        if (!isPlayableAudioResult(result)) Text(result.url, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             if (result.url.startsWith("webrtc://")) {
                                 TextButton(onClick = onRestore) {
@@ -1326,6 +1344,7 @@ private suspend fun submitWorkflow(
     }
     WorkflowKind.StoryImages -> OneImageApi.submitQwenStoryImagesWorkflow(baseUrl, clientId, files.getValue("qwenImage"), text["storyPrompt"].orEmpty(), text["stylePrompt"].orEmpty(), text["aspectRatio"].orEmpty().ifBlank { STORY_ASPECT_RATIOS.first() })
     WorkflowKind.RefRestyle -> OneImageApi.submitRefRestyleWorkflow(baseUrl, clientId, files.getValue("refRestyleImage"), files.getValue("refRestyleReference"), text["prompt"].orEmpty())
+    WorkflowKind.SoundEffects -> OneImageApi.submitSoundEffectsWorkflow(baseUrl, clientId, SoundEffectsConfig.from(text))
     WorkflowKind.GameAssetUpscaler -> OneImageApi.submitGameAssetUpscalerWorkflow(baseUrl, clientId, files.getValue("upscalerImage"), text["description"].orEmpty(), text["importantDescription"].orEmpty(), text["negativePrompt"].orEmpty())
     WorkflowKind.Keyframes -> OneImageApi.submitKeyframesWorkflow(
         baseUrl,
@@ -1372,6 +1391,7 @@ private fun workflowEstimatedCreditsValue(
     WorkflowKind.CharacterReplacement -> pricing.characterReplacementCredits(textValues["duration"]?.toFloatOrNull() ?: 1f)
     WorkflowKind.StoryImages -> pricing.qwenImageEditFlat
     WorkflowKind.RefRestyle -> pricing.refRestyleFlat
+    WorkflowKind.SoundEffects -> SoundEffectsConfig.from(textValues).credits
     WorkflowKind.GameAssetUpscaler -> pricing.gameAssetUpscalerFlat
     WorkflowKind.Keyframes -> pricing.oneMotionCredits(
         (0 until (keyframeCount - 1).coerceAtLeast(0)).map { index ->
@@ -1386,31 +1406,9 @@ private fun workflowEngineStatusKey(kind: WorkflowKind): String = when (kind) {
     WorkflowKind.Keyframes -> "video"
     WorkflowKind.StoryImages,
     WorkflowKind.RefRestyle,
+    WorkflowKind.SoundEffects,
     WorkflowKind.GameAssetUpscaler -> "image"
 }
-
-private fun mergeResults(current: List<OneImageTaskResult>, incoming: List<OneImageTaskResult>): List<OneImageTaskResult> {
-    val merged = current.toMutableList()
-    incoming.forEach { result ->
-        val key = result.filename.ifBlank { result.url.removePrefix("webrtc://") }
-        val index = merged.indexOfFirst { existing -> existing.filename == key || existing.filename == result.filename || existing.label == result.label }
-        if (index >= 0) {
-            val existing = merged[index]
-            val preferred = if (existing.isDirectResult() && result.url.startsWith("webrtc://")) existing else result
-            merged[index] = preferred.copy(
-                label = existing.label.ifBlank { preferred.label },
-                filename = preferred.filename.ifBlank { existing.filename },
-                size = preferred.size.takeIf { it > 0L } ?: existing.size
-            )
-        } else {
-            merged += result
-        }
-    }
-    return merged
-}
-
-private fun OneImageTaskResult.isDirectResult(): Boolean =
-    url.isNotBlank() && !url.startsWith("webrtc://")
 
 private fun progressFraction(task: OneImageTask): Float {
     val max = task.progressMax.takeIf { it > 0 } ?: 100
@@ -1483,6 +1481,7 @@ private fun safeDownloadFilename(value: String): String =
     value.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "onestudio-result" }
 
 private fun defaultExtensionForResult(result: OneImageTaskResult): String = when {
+    isPlayableAudioResult(result) -> "mp3"
     isPlayableVideoResult(result) -> "mp4"
     isRenderableImageResult(result) -> "png"
     else -> "bin"
@@ -1493,6 +1492,9 @@ private fun mimeTypeForFilename(filename: String): String = when (filename.subst
     "jpg", "jpeg" -> "image/jpeg"
     "webp" -> "image/webp"
     "gif" -> "image/gif"
+    "mp3" -> "audio/mpeg"
+    "wav" -> "audio/wav"
+    "flac" -> "audio/flac"
     "mp4" -> "video/mp4"
     "webm" -> "video/webm"
     "glb" -> "model/gltf-binary"

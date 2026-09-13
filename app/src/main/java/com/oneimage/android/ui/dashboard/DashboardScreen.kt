@@ -144,6 +144,7 @@ fun DashboardScreen(
         DashboardItem("Video Generation", Icons.Default.Movie, Screen.VideoGen, "Short video from two images"),
         DashboardItem("Single I2V", Icons.Default.SmartDisplay, Screen.SingleI2V, "One image into a clip up to 10 seconds"),
         DashboardItem("Keyframes", Icons.Default.Animation, Screen.Keyframes, "Longer video from key images"),
+        DashboardItem("Sound Effects", Icons.Default.Mic, Screen.SoundEffects, "Foley, ambience, and impacts"),
         DashboardItem("LipSync", Icons.Default.Mic, Screen.LipSync, "Speaking or singing image clips"),
         DashboardItem("Character Replacement", Icons.Default.FaceRetouchingNatural, Screen.CharacterReplacement, "Change a character in a clip"),
         DashboardItem("Story Images", Icons.Default.AutoStories, Screen.StoryImages, "Images for story paragraphs"),
@@ -634,7 +635,10 @@ fun DashboardCard(item: DashboardItem, onClick: () -> Unit) {
                     .background(PrimaryGradient, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
+                if (item.route == Screen.SoundEffects) {
+                    Image(painter = painterResource(R.drawable.sound_effects), contentDescription = null,
+                        modifier = Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
+                } else Icon(
                     imageVector = item.icon,
                     contentDescription = null,
                     tint = Color.Black,
