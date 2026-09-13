@@ -14,3 +14,5 @@ Build with `-PlocalApiBaseUrl=http://127.0.0.1:3001/` and use `adb reverse tcp:3
 - Portrait and landscape inspected. Added horizontal system-bar insets for sound controls and removed image-only display controls from sound history.
 - Compose device controls automation stalled before activity launch on this MIUI device. It is not counted as passing; direct USB interaction and screenshots were used instead.
 - Run the native playback arbitration test against a previously generated local three-effect task with `scripts/verify-sound-effects-device.ps1 -AudioTaskId <task-id>`. It reuses local MP3 files and creates no generation task.
+
+- Native USB playback test passed (1/1) on MI 8 Lite: starting each of three real MP3 players pauses the previous player; releasing an older player does not disturb the active one.
