@@ -16,3 +16,5 @@ Build with `-PlocalApiBaseUrl=http://127.0.0.1:3001/` and use `adb reverse tcp:3
 - Run the native playback arbitration test against a previously generated local three-effect task with `scripts/verify-sound-effects-device.ps1 -AudioTaskId <task-id>`. It reuses local MP3 files and creates no generation task.
 
 - Native USB playback test passed (1/1) on MI 8 Lite: starting each of three real MP3 players pauses the previous player; releasing an older player does not disturb the active one.
+
+History filename follow-up (2026-09-14): history export now selects source-name preservation by sound_effects task type, independent of display title. Missing names retain the existing fallback. All 60 unit tests passed. Updated APK installed over USB. SoundHistoryExportDeviceTest could not export because the connected device had no persisted write permission for a selected folder; this device check is not counted as passing.
