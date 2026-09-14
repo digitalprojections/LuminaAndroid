@@ -66,3 +66,8 @@ private fun String.toSlug(): String =
     lowercase(Locale.US)
         .replace(Regex("[^a-z0-9]+"), "-")
         .trim('-')
+
+internal fun historyExportFilename(taskType: String, workflowName: String, result: OneImageTaskResult, dateMillis: Long, index: Int): String =
+    if (taskType == "sound_effects" && result.filename.isNotBlank())
+        savedAssetFilename("Sound Effects", result, "bin", dateMillis, index)
+    else savedAssetFilename(workflowName, result, "bin", dateMillis, index)

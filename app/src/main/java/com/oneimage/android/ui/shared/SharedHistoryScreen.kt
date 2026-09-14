@@ -1207,7 +1207,7 @@ private fun sharedHistoryIsRenderableImage(result: OneImageTaskResult): Boolean 
 private fun isExportableResult(result: OneImageTaskResult): Boolean =
     result.url.isNotBlank() && !result.url.startsWith("webrtc://")
 
-private suspend fun exportTaskResultsToFolder(
+internal suspend fun exportTaskResultsToFolder(
     context: Context,
     folderUri: Uri,
     task: OneImageTask,
@@ -1231,7 +1231,7 @@ private suspend fun exportTaskResultsToFolder(
 
     val exportDate = task.createdAtMs.takeIf { it > 0L } ?: System.currentTimeMillis()
     results.forEachIndexed { index, result ->
-        val filename = exportFilename(result, index, workflowName, exportDate)
+        val filename = historyExportFilename(task.type, workflowName, result, exportDate, index)
         val targetUri = DocumentsContract.createDocument(
             resolver,
             parentDocumentUri,
@@ -1259,19 +1259,6 @@ private fun openResultInputStream(context: Context, url: String) = when {
     url.startsWith("http://") || url.startsWith("https://") -> URL(url).openStream()
     else -> error("This result must be restored before saving.")
 }
-
-private fun exportFilename(
-    result: OneImageTaskResult,
-    index: Int,
-    workflowName: String,
-    dateMillis: Long
-): String = savedAssetFilename(
-    workflowName = workflowName,
-    result = result,
-    defaultExtension = "bin",
-    dateMillis = dateMillis,
-    index = index
-)
 
 private fun mimeTypeForFilename(filename: String): String {
     val extension = filename.substringAfterLast('.', "").lowercase()
