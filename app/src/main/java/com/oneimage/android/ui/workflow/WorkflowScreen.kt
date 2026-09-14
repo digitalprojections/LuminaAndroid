@@ -1239,7 +1239,7 @@ private fun ResultsCard(
                 val renderableVideo = isPlayableVideoResult(result)
                 Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(if (result.filename.endsWith(".mp3", true)) "Sound effect ${index + 1}" else result.label.ifBlank { result.filename.ifBlank { "Result" } }, fontWeight = FontWeight.SemiBold)
+                        Text(if (result.filename.endsWith(".mp3", true)) result.filename else result.label.ifBlank { result.filename.ifBlank { "Result" } }, fontWeight = FontWeight.SemiBold)
                         if (renderableImage) {
                             Box(
                                 modifier = Modifier
@@ -1439,7 +1439,7 @@ private suspend fun saveWorkflowResultToDownloads(
     if (result.url.startsWith("webrtc://")) error("Restore this result before downloading.")
 
     val savedName = savedAssetFilename(workflowName, result, defaultExtensionForResult(result))
-    val filename = safeDownloadFilename(savedName)
+    val filename = if (workflowName == "Sound Effects") savedName else safeDownloadFilename(savedName)
     val values = ContentValues().apply {
         put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
         put(MediaStore.MediaColumns.MIME_TYPE, mimeTypeForFilename(filename))

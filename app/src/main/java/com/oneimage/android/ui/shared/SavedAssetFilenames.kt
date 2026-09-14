@@ -24,6 +24,10 @@ fun savedAssetFilename(
     dateMillis: Long = System.currentTimeMillis(),
     index: Int? = null
 ): String {
+    if (workflowName == "Sound Effects" && result.filename.isNotBlank()) {
+        return result.filename.substringAfterLast('/').substringAfterLast('\\')
+            .replace(Regex("[<>:\"|?*\\x00-\\x1f]"), "_")
+    }
     val extension = resultExtension(result, defaultExtension)
     val workflow = workflowName.toSlug().ifBlank { "oneimage" }
     val descriptor = result.label
