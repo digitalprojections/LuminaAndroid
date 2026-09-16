@@ -593,6 +593,23 @@ private fun SharedHistoryHeroCard(
                     .padding(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    if (tone != null) {
+                        SharedHistoryStatusBadge(tone)
+                    }
+                    task?.let {
+                        TinyHeroBadge("${it.results.size}", MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f), MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                    if (availability?.hasAnyLocal == true) {
+                        TinyHeroBadge(
+                            label = if (availability.totalCount > 0) "${availability.localCount}/${availability.totalCount}" else "Local",
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.75f),
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                }
+
                 SharedHistoryPreviewFrame(previewSize = previewSize, previewFrame = previewFrame) {
                     when {
                         isImagePreview -> {
@@ -644,26 +661,6 @@ private fun SharedHistoryHeroCard(
                             )
                         }
                     }
-
-                    if (tone != null) {
-                        Surface(
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(8.dp),
-                            shape = RoundedCornerShape(999.dp),
-                            color = tone.container,
-                            border = BorderStroke(1.dp, tone.content.copy(alpha = 0.22f))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(tone.icon, contentDescription = null, tint = tone.content, modifier = Modifier.size(12.dp))
-                                Text(tone.label, color = tone.content, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-                            }
-                        }
-                    }
                 }
 
                 if (task?.type != SharedHistorySpecs.SoundEffects.taskType) PreviewDisplayControls(
@@ -675,20 +672,6 @@ private fun SharedHistoryHeroCard(
                     onPreviewFrame = onPreviewFrame,
                     onPreviewFit = onPreviewFit
                 )
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    task?.let {
-                        TinyHeroBadge("${it.results.size}", MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f), MaterialTheme.colorScheme.onPrimaryContainer)
-                    }
-                    if (availability?.hasAnyLocal == true) {
-                        TinyHeroBadge(
-                            label = if (availability.totalCount > 0) "${availability.localCount}/${availability.totalCount}" else "Local",
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.75f),
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                    }
-                }
 
                 if (resultCount > 1) {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1089,6 +1072,24 @@ private fun TinyHeroBadge(
             fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold
         )
+    }
+}
+
+@Composable
+private fun SharedHistoryStatusBadge(tone: SharedHistoryStatusTone) {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = tone.container,
+        border = BorderStroke(1.dp, tone.content.copy(alpha = 0.22f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(tone.icon, contentDescription = null, tint = tone.content, modifier = Modifier.size(12.dp))
+            Text(tone.label, color = tone.content, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+        }
     }
 }
 
