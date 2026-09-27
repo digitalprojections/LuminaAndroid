@@ -1,5 +1,8 @@
 package com.oneimage.android.ui.meshmodel
 
+import com.oneimage.android.ui.shared.rememberGenerationQuote
+import com.oneimage.android.ui.shared.GenerationQuoteStatus
+
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -84,6 +87,8 @@ fun MeshModelScreen(
 ) {
     val context = LocalContext.current
     val state by viewModel.uiState.collectAsState()
+    val quote = rememberGenerationQuote("image_to_3d_mesh", JSONObject())
+    androidx.compose.runtime.LaunchedEffect(quote.ready, quote.credits) { viewModel.updateQuotedCredits(if (quote.ready) quote.credits else null) }
     val clientId = remember {
         val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
             ?: "device"
@@ -159,7 +164,7 @@ fun MeshModelScreen(
         )
     }
 
-    val canGenerate = state.sourceImageUri != null &&
+    val canGenerate = quote.ready && state.sourceImageUri != null &&
             state.transferImageUri != null &&
             !state.isBusy &&
             state.engineReady &&
@@ -199,6 +204,7 @@ fun MeshModelScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            GenerationQuoteStatus(quote)
             StatusStrip(state)
 
             SourcePanel(
@@ -385,7 +391,7 @@ private fun BuildPanel(
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(state.statusMessage, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 } else {
-                    Text("Create Model · ${state.estimatedCredits} credits", fontWeight = FontWeight.Bold)
+                    Text("Create Model · ${state.quotedCredits?.toString() ?: "…"} credits", fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.width(8.dp))
                     Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(18.dp))
                 }
@@ -404,7 +410,7 @@ private fun BuildPanel(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("${state.estimatedCredits} credits per run", fontSize = 12.sp, modifier = Modifier.weight(1f))
+                Text("${state.quotedCredits?.toString() ?: "…"} credits per run", fontSize = 12.sp, modifier = Modifier.weight(1f))
                 Text(
                     "${state.profile?.creditBalanceText ?: "0"} available",
                     fontSize = 12.sp,

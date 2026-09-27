@@ -1,5 +1,9 @@
 package com.oneimage.android.ui.videogen
 
+import com.oneimage.android.ui.shared.rememberGenerationQuote
+import com.oneimage.android.ui.shared.GenerationQuoteStatus
+import org.json.JSONObject
+
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -88,6 +92,8 @@ fun VideoGenScreen(
 ) {
     val context = LocalContext.current
     val state by viewModel.uiState.collectAsState()
+    val quote = rememberGenerationQuote("video", JSONObject().put("duration", state.duration).put("frameRate", state.frameRate).put("width", state.outputResolution.width).put("height", state.outputResolution.height).put("prompt", state.prompt))
+    androidx.compose.runtime.LaunchedEffect(quote.ready, quote.credits) { viewModel.updateQuotedCredits(if (quote.ready) quote.credits else null) }
     val clientId = remember {
         val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
             ?: "device"
@@ -98,7 +104,7 @@ fun VideoGenScreen(
         if (uri != null) viewModel.selectImage(context, uri, pickingStart)
     }
     var cancelAction by remember { androidx.compose.runtime.mutableStateOf<(() -> Unit)?>(null) }
-    val canGenerate = state.startSourceImageUri != null &&
+    val canGenerate = quote.ready && state.startSourceImageUri != null &&
         state.startTransferImageUri != null &&
         state.endSourceImageUri != null &&
         state.endTransferImageUri != null &&
@@ -151,6 +157,7 @@ fun VideoGenScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            GenerationQuoteStatus(quote)
             StatusStrip(state)
 
             SourcePanel(
@@ -190,7 +197,7 @@ fun VideoGenScreen(
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(state.statusMessage, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 } else {
-                    Text("Generate Video · ${state.estimatedCredits} credits", fontWeight = FontWeight.Bold)
+                    Text("Generate Video · ${state.quotedCredits?.toString() ?: "…"} credits", fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.width(8.dp))
                     Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(18.dp))
                 }
@@ -418,7 +425,7 @@ private fun OutputSettingsPanel(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("${state.estimatedCredits} credits per run", fontSize = 12.sp, modifier = Modifier.weight(1f))
+                Text("${state.quotedCredits?.toString() ?: "…"} credits per run", fontSize = 12.sp, modifier = Modifier.weight(1f))
                 Text(
                     "${state.profile?.creditBalanceText ?: "0"} available",
                     fontSize = 12.sp,

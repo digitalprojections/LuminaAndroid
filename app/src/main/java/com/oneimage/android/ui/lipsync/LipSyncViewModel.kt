@@ -86,6 +86,7 @@ data class LipSyncUiState(
     val currentTask: OneImageTask? = null,
     val results: List<OneImageTaskResult> = emptyList(),
     val profile: OneImageAccountProfile? = null,
+    val quotedCredits: Int? = null,
     val pricing: WorkflowPricingConfig = WorkflowPricingConfig(),
     val engineReady: Boolean = false,
     val queueStatus: OneImageQueueStatus? = null
@@ -110,13 +111,14 @@ data class LipSyncUiState(
         }
 
     val estimatedCredits: Int
-        get() = pricing.lipSyncCredits(if (useFullAudio) audioDurationSeconds else durationSeconds).coerceAtLeast(pricing.oneLipSyncPerSecond.coerceAtLeast(1))
+        get() = quotedCredits ?: 0
 
     val hasEnoughCredits: Boolean
-        get() = profile?.hasEnoughCredits(estimatedCredits) == true
+        get() = quotedCredits != null && profile?.hasEnoughCredits(estimatedCredits) == true
 }
 
 class LipSyncViewModel : ViewModel() {
+    fun updateQuotedCredits(credits: Int?) { _uiState.value = _uiState.value.copy(quotedCredits = credits) }
     private val auth = FirebaseAuth.getInstance()
     private val firestore = FirebaseFirestore.getInstance()
     private val baseUrl = BuildConfig.ONEIMAGE_API_BASE_URL.ifBlank { "https://genstudio.web.app/" }

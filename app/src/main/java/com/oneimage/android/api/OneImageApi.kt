@@ -172,6 +172,7 @@ object OneImageApi {
 
         val requestBuilder = Request.Builder()
             .url("${baseUrl.trimEnd('/')}/api/generate")
+            .apply { ActiveGenerationQuotes.headers("image").forEach { (name, value) -> header(name, value) } }
             .post(payload.toString().toRequestBody("application/json".toMediaType()))
             .addHeader("Content-Type", "application/json")
 
@@ -180,6 +181,7 @@ object OneImageApi {
         }
 
         client.newCall(requestBuilder.build()).execute().use { response ->
+            if (response.code == 409) ActiveGenerationQuotes.invalidate("image")
             val text = response.body?.string().orEmpty()
             val json = JSONObject(text.ifBlank { "{}" })
             if (!response.isSuccessful || json.optBoolean("success") == false) {
@@ -217,6 +219,7 @@ object OneImageApi {
 
         val requestBuilder = Request.Builder()
             .url("${baseUrl.trimEnd('/')}/api/video/generate")
+            .apply { ActiveGenerationQuotes.headers("video").forEach { (name, value) -> header(name, value) } }
             .post(payload.toString().toRequestBody("application/json".toMediaType()))
             .addHeader("Content-Type", "application/json")
 
@@ -225,6 +228,7 @@ object OneImageApi {
         }
 
         client.newCall(requestBuilder.build()).execute().use { response ->
+            if (response.code == 409) ActiveGenerationQuotes.invalidate("video")
             val text = response.body?.string().orEmpty()
             val json = JSONObject(text.ifBlank { "{}" })
             if (!response.isSuccessful || json.optBoolean("success") == false) {
@@ -298,6 +302,7 @@ object OneImageApi {
 
         val requestBuilder = Request.Builder()
             .url("${baseUrl.trimEnd('/')}/api/lipsync/generate")
+            .apply { ActiveGenerationQuotes.headers("lipsync").forEach { (name, value) -> header(name, value) } }
             .post(payload.toString().toRequestBody("application/json".toMediaType()))
             .addHeader("Content-Type", "application/json")
 
@@ -306,6 +311,7 @@ object OneImageApi {
         }
 
         client.newCall(requestBuilder.build()).execute().use { response ->
+            if (response.code == 409) ActiveGenerationQuotes.invalidate("lipsync")
             val text = response.body?.string().orEmpty()
             val json = JSONObject(text.ifBlank { "{}" })
             if (!response.isSuccessful || json.optBoolean("success") == false) {
@@ -715,6 +721,10 @@ object OneImageApi {
     ): String = withContext(Dispatchers.IO) {
         val requestBuilder = Request.Builder()
             .url("${baseUrl.trimEnd('/')}$path")
+            .apply {
+                val workflow = ActiveGenerationQuotes.workflowForPath(path)
+                ActiveGenerationQuotes.headers(workflow).forEach { (name, value) -> header(name, value) }
+            }
             .post(payload.toString().toRequestBody("application/json".toMediaType()))
             .addHeader("Content-Type", "application/json")
 
@@ -723,6 +733,7 @@ object OneImageApi {
         }
 
         client.newCall(requestBuilder.build()).execute().use { response ->
+            if (response.code == 409) ActiveGenerationQuotes.invalidate(ActiveGenerationQuotes.workflowForPath(path))
             val text = response.body?.string().orEmpty()
             val json = parseJsonObjectOrNull(text)
             if (!response.isSuccessful || json?.optBoolean("success") == false) {

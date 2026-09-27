@@ -1,5 +1,9 @@
 package com.oneimage.android.ui.imagegen
 
+import com.oneimage.android.ui.shared.rememberGenerationQuote
+import com.oneimage.android.ui.shared.GenerationQuoteStatus
+import org.json.JSONObject
+
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -98,6 +102,8 @@ fun ImageGenScreen(
 ) {
     val context = LocalContext.current
     val state by viewModel.uiState.collectAsState()
+    val quote = rememberGenerationQuote("image", JSONObject().put("isLightning", state.isLightning).put("prompt", state.prompt))
+    androidx.compose.runtime.LaunchedEffect(quote.ready, quote.credits) { viewModel.updateQuotedCredits(if (quote.ready) quote.credits else null) }
     val clientId = remember {
         val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
             ?: "device"
@@ -107,7 +113,7 @@ fun ImageGenScreen(
         if (uri != null) viewModel.selectImage(context, uri)
     }
     var cancelAction by remember { androidx.compose.runtime.mutableStateOf<(() -> Unit)?>(null) }
-    val canGenerate = state.sourceImageUri != null &&
+    val canGenerate = quote.ready && state.sourceImageUri != null &&
         state.transferImageUri != null &&
         state.prompt.isNotBlank() &&
         !state.isBusy &&
@@ -158,6 +164,7 @@ fun ImageGenScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            GenerationQuoteStatus(quote)
             StatusStrip(state)
 
             SourcePanel(
@@ -195,7 +202,7 @@ fun ImageGenScreen(
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(state.statusMessage, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 } else {
-                    Text("Generate Angles · ${state.estimatedCredits} credits", fontWeight = FontWeight.Bold)
+                    Text("Generate Angles · ${state.quotedCredits?.toString() ?: "…"} credits", fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.width(8.dp))
                     Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(18.dp))
                 }
@@ -384,7 +391,7 @@ private fun QualityPanel(
                 Switch(checked = highQuality, onCheckedChange = onHighQualityChanged, enabled = !state.isBusy)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("${state.estimatedCredits} credits per run", fontSize = 12.sp, modifier = Modifier.weight(1f))
+                Text("${state.quotedCredits?.toString() ?: "…"} credits per run", fontSize = 12.sp, modifier = Modifier.weight(1f))
                 Text(
                     "${state.profile?.creditBalanceText ?: "0"} available",
                     fontSize = 12.sp,

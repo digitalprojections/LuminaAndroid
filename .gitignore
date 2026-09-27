@@ -16,3 +16,6 @@
 local.properties
 .env
 debug.keystore
+
+# Local pricing verification output
+/pricing-test-results/

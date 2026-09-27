@@ -1,1 +1,1 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application android:networkSecurityConfig="@xml/local_test_network_security" /></manifest>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application android:networkSecurityConfig="@xml/local_test_network_security"><activity android:name=".PricingVerificationActivity" android:exported="true" android:configChanges="orientation|screenSize" /></application></manifest>

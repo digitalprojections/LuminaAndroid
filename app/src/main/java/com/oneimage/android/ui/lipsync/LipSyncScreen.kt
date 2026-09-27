@@ -1,5 +1,9 @@
 package com.oneimage.android.ui.lipsync
 
+import com.oneimage.android.ui.shared.rememberGenerationQuote
+import com.oneimage.android.ui.shared.GenerationQuoteStatus
+import org.json.JSONObject
+
 import android.media.MediaPlayer
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -90,6 +94,8 @@ fun LipSyncScreen(
 ) {
     val context = LocalContext.current
     val state by viewModel.uiState.collectAsState()
+    val quote = rememberGenerationQuote("lipsync", JSONObject().put("duration", state.durationSeconds).put("inputAudioDuration", state.audioDurationSeconds).put("audioStart", state.audioStartSeconds).put("useFullAudio", state.useFullAudio).put("frameRate", 24).put("width", state.transferImageWidth).put("height", state.transferImageHeight).put("prompt", state.prompt))
+    androidx.compose.runtime.LaunchedEffect(quote.ready, quote.credits) { viewModel.updateQuotedCredits(if (quote.ready) quote.credits else null) }
     val clientId = remember {
         val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
             ?: "device"
@@ -113,7 +119,7 @@ fun LipSyncScreen(
         }
     )
 
-    val canGenerate = state.sourceImageUri != null &&
+    val canGenerate = quote.ready && state.sourceImageUri != null &&
         state.transferImageUri != null &&
         state.audioUri != null &&
         state.audioFileInfo != null &&
@@ -157,6 +163,7 @@ fun LipSyncScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            GenerationQuoteStatus(quote)
             StatusStrip(state)
 
             Card(
@@ -233,7 +240,7 @@ fun LipSyncScreen(
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(state.statusMessage, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 } else {
-                    Text("Generate Lip Sync · ${state.estimatedCredits} credits", fontWeight = FontWeight.Bold)
+                    Text("Generate Lip Sync · ${state.quotedCredits?.toString() ?: "…"} credits", fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.width(8.dp))
                     Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(18.dp))
                 }

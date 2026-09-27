@@ -1,5 +1,11 @@
 package com.oneimage.android.ui.workflow
 
+import org.json.JSONObject
+import org.json.JSONArray
+
+import com.oneimage.android.ui.shared.rememberGenerationQuote
+import com.oneimage.android.ui.shared.GenerationQuoteStatus
+
 import com.oneimage.android.ui.shared.AudioResultPlayer
 import com.oneimage.android.ui.shared.isPlayableAudioResult
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -484,8 +490,26 @@ fun WorkflowScreen(
     val storyPromptLimitExceeded = storyParagraphs.any { it.length > STORY_PARAGRAPH_LIMIT }
     val singleI2VInputSafe = spec.kind != WorkflowKind.SingleI2V ||
         SingleI2VConfig.preparedImageWithinLimit(imageDimensions["singleI2VImage"])
-    val estimatedCreditsForBalance = workflowEstimatedCreditsValue(spec.kind, workflowPricing, textValues, keyframeCount)
-    val hasEnoughCredits = profile?.hasEnoughCredits(estimatedCreditsForBalance) == true
+    val quoteSettings = JSONObject(textValues.toMap()).apply {
+        if (spec.kind == WorkflowKind.SingleI2V) {
+            val dimensions = imageDimensions["singleI2VImage"] ?: (0 to 0)
+            val fps = SingleI2VConfig.clampFrameRate(textValues["frameRate"])
+            put("inputWidth", dimensions.first); put("inputHeight", dimensions.second)
+            put("frameRate", fps)
+            put("duration", SingleI2VConfig.clampDurationForInput(textValues["duration"], dimensions, fps))
+        }
+        if (spec.kind == WorkflowKind.CharacterReplacement) {
+            put("inputVideoDuration", durations["characterVideo"] ?: 1f)
+            put("duration", CharacterReplacementConfig.clampDuration(textValues["duration"], durations["characterVideo"]))
+        }
+        if (spec.kind == WorkflowKind.SoundEffects) put("batchSize", SoundEffectsConfig.from(textValues).batchSize)
+        if (spec.kind == WorkflowKind.Keyframes) put("inputs", JSONArray().apply {
+            repeat(keyframeCount) { index -> put(JSONObject().put("durationFrames", textValues[keyframeDurationId(index)]?.toIntOrNull() ?: 25)) }
+        })
+    }
+    val quote = rememberGenerationQuote(spec.taskType, quoteSettings)
+    val estimatedCreditsForBalance = quote.credits
+    val hasEnoughCredits = quote.ready && profile?.hasEnoughCredits(estimatedCreditsForBalance) == true
     val ready = activeFileSlots.all { fileInfos[it.id] != null } && singleI2VInputSafe && when (spec.kind) {
         WorkflowKind.SoundEffects -> SoundEffectsConfig.from(textValues).isValid
         WorkflowKind.Keyframes -> keyframeCount >= 2
@@ -652,6 +676,7 @@ fun WorkflowScreen(
                 }
             }
 
+            GenerationQuoteStatus(quote)
             Button(
                 onClick = {
                     scope.launch {
@@ -732,7 +757,7 @@ fun WorkflowScreen(
                             Spacer(modifier = Modifier.width(10.dp))
                             Text(status, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.Black)
                         } else {
-                            Text("${spec.action} · $estimatedCreditsForBalance credits", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Black)
+                            Text("${spec.action} · ${quote.label}", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Black)
                             Spacer(modifier = Modifier.width(8.dp))
                             Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.Black)
                         }

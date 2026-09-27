@@ -5,24 +5,21 @@ import org.junit.Test
 
 class LipSyncUiStateTest {
     @Test
-    fun estimatedCreditsRoundsUpAndUsesMinimum() {
-        val short = LipSyncUiState(durationSeconds = 0.2f)
-        val medium = LipSyncUiState(durationSeconds = 3.2f)
-        val long = LipSyncUiState(durationSeconds = 10.7f)
-
-        assertEquals(4, short.estimatedCredits)
-        assertEquals(16, medium.estimatedCredits)
-        assertEquals(44, long.estimatedCredits)
+    fun pricingRemainsUnavailableUntilTheBackendResponds() {
+        val state = LipSyncUiState(durationSeconds = 10.7f)
+        assertEquals(null, state.quotedCredits)
+        assertEquals(false, state.hasEnoughCredits)
     }
 
     @Test
-    fun fullAudioCreditsUseAudioDuration() {
+    fun fullAudioDisplaysTheBackendQuoteWithoutRecalculatingIt() {
         val state = LipSyncUiState(
             audioDurationSeconds = 61.2f,
             durationSeconds = 10f,
-            useFullAudio = true
+            useFullAudio = true,
+            quotedCredits = 317
         )
 
-        assertEquals(248, state.estimatedCredits)
+        assertEquals(317, state.estimatedCredits)
     }
 }
